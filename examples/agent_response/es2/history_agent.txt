@@ -1,0 +1,55 @@
+-- DEBUG user_prompt --
+
+Filter past strategy attempts for relevance to the current intent and PM data.
+
+Intent Type: ["RANEnergyEfficiency"]
+
+Past Attempts: []
+
+Instructions:
+- Select attempts matching Intent Type and similar PM conditions.
+- Rank by fulfilment_status (FULFILLED > NOT_FULFILLED) and recency.
+- Output JSON with:
+  - result: {relevant_attempts: [{attempt_id, strategy_json, outcome_json, fulfilment_status}]}
+  - explanation: String explaining the filtering
+  - error: Null or error message
+Example:
+{
+  "result": {
+    "relevant_attempts": [
+      {
+        "attempt_id": "123",
+        "strategy_json": {...},
+        "outcome_json": [{...}],
+        "fulfilment_status": "FULFILLED"
+      }
+    ]
+  },
+  "explanation": "Selected recent successful attempts for AveDLRANUEThpt",
+  "error": null
+}
+    
+
+-- End of DEBUG user_prompt --
+2025-05-15 23:01:41,352 - INFO - HTTP Request: POST https://integrate.api.nvidia.com/v1/chat/completions "HTTP/1.1 200 OK"
+
+-- Streaming response --
+Based on the provided instructions, I will generate the JSON output. Since there are no past attempts, the output will be empty.
+
+```
+{
+  "result": {
+    "relevant_attempts": []
+  },
+  "explanation": "No past attempts found for RANEnergyEfficiency",
+  "error": null
+}
+```
+
+Explanation:
+
+* Since there are no past attempts, the `relevant_attempts` array is empty.
+* The `explanation` field indicates that no past attempts were found for the specified intent type (`RANEnergyEfficiency`).
+* The `error` field is null, indicating that no errors occurred during the filtering process.
+-- End Streaming response --
+call_llm: {'result': {'relevant_attempts': []}, 'explanation': 'No past attempts found for RANEnergyEfficiency', 'error': None}

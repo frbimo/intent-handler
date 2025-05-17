@@ -1,0 +1,490 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "type": "object",
+    "description": "Root object for the intent, containing expectations and reports for a 5G network management system.",
+    "properties": {
+        "intent": {
+            "type": "object",
+            "description": "Defines the intent, including expectations and associated reports for network management.",
+            "properties": {
+                "intentReport": {
+                    "type": "object",
+                    "description": "Contains reports on intent fulfillment, conflicts, and feasibility checks.",
+                    "properties": {
+                        "IntentFulfilmentReport": {
+                            "type": "object",
+                            "description": "Reports the outcome of applying the intent, including achieved values, strategies, and contextual data.",
+                            "required": [
+                                "intentFulfilmentInfo",
+                                "expectationFulfilmentResult"
+                            ],
+                            "properties": {
+                                "intentFulfilmentInfo": {
+                                    "type": "object",
+                                    "description": "Summarizes the overall fulfillment status of the intent across all expectations.",
+                                    "required": [
+                                        "fulfilmentStatus",
+                                        "notFulfilledState"
+                                    ],
+                                    "properties": {
+                                        "fulfilmentStatus": {
+                                            "type": "string",
+                                            "enum": [
+                                                "FULFILLED",
+                                                "PARTIALLY_FULFILLED",
+                                                "NOT_FULFILLED"
+                                            ],
+                                            "description": "Overall status of intent fulfillment: FULFILLED (all targets met), PARTIALLY_FULFILLED (some targets met), or NOT_FULFILLED (no targets met)."
+                                        },
+                                        "notFulfilledState": {
+                                            "type": "string",
+                                            "enum": [
+                                                "ACKNOWLEDGED",
+                                                "PENDING",
+                                                "REJECTED"
+                                            ],
+                                            "description": "State of unfulfilled targets: ACKNOWLEDGED (noted but no action taken), PENDING (under review), or REJECTED (deemed unachievable)."
+                                        }
+                                    }
+                                },
+                                "expectationFulfilmentResult": {
+                                    "type": "array",
+                                    "description": "Detailed results for each expectation, including target outcomes, strategies, context, and failure analysis.",
+                                    "items": {
+                                        "type": "object",
+                                        "required": [
+                                            "expectationId",
+                                            "expectationFulfilmentInfo",
+                                            "targetFulfilmentResults",
+                                            "appliedStrategies",
+                                            "contextualData"
+                                        ],
+                                        "properties": {
+                                            "expectationId": {
+                                                "type": "string",
+                                                "description": "Unique identifier for the expectation, linking to the corresponding intentExpectation entry (e.g., 'RAN_Energy_Saving')."
+                                            },
+                                            "expectationFulfilmentInfo": {
+                                                "type": "object",
+                                                "description": "Status of fulfillment for this specific expectation.",
+                                                "required": [
+                                                    "fulfilmentStatus",
+                                                    "notFulfilledState"
+                                                ],
+                                                "properties": {
+                                                    "fulfilmentStatus": {
+                                                        "type": "string",
+                                                        "enum": [
+                                                            "FULFILLED",
+                                                            "PARTIALLY_FULFILLED",
+                                                            "NOT_FULFILLED"
+                                                        ],
+                                                        "description": "Status of this expectation: FULFILLED (all targets met), PARTIALLY_FULFILLED (some targets met), or NOT_FULFILLED (no targets met)."
+                                                    },
+                                                    "notFulfilledState": {
+                                                        "type": "string",
+                                                        "enum": [
+                                                            "ACKNOWLEDGED",
+                                                            "PENDING",
+                                                            "REJECTED"
+                                                        ],
+                                                        "description": "State of unfulfilled targets for this expectation, indicating next steps or resolution status."
+                                                    }
+                                                }
+                                            },
+                                            "targetFulfilmentResults": {
+                                                "type": "array",
+                                                "description": "List of outcomes for each target defined in the expectation, comparing achieved values to goals.",
+                                                "items": {
+                                                    "type": "object",
+                                                    "required": [
+                                                        "targetName",
+                                                        "targetAchievedValue",
+                                                        "targetUnit",
+                                                        "targetStatus"
+                                                    ],
+                                                    "properties": {
+                                                        "targetName": {
+                                                            "type": "string",
+                                                            "description": "Name of the target metric (e.g., 'RANEnergyConsumption', 'AveDLRANUEThpt') as defined in the intent."
+                                                        },
+                                                        "targetAchievedValue": {
+                                                            "type": "number",
+                                                            "description": "Actual value achieved for the target after applying strategies (e.g., 950 for energy consumption)."
+                                                        },
+                                                        "targetUnit": {
+                                                            "type": "string",
+                                                            "enum": [
+                                                                "boolean",
+                                                                "bps",
+                                                                "kbps",
+                                                                "Mbps",
+                                                                "Gbps",
+                                                                "dB",
+                                                                "dBm",
+                                                                "count",
+                                                                "millisecond",
+                                                                "second",
+                                                                "bps/Hz",
+                                                                "percentage",
+                                                                "text"
+                                                            ],
+                                                            "description": "Unit of the achieved value (e.g., 'kWh' for energy, 'Mbps' for throughput, 'percentage' for efficiency)."
+                                                        },
+                                                        "targetStatus": {
+                                                            "type": "string",
+                                                            "enum": [
+                                                                "FULFILLED",
+                                                                "NOT_FULFILLED"
+                                                            ],
+                                                            "description": "Whether the target was met: FULFILLED (achieved value meets intent condition) or NOT_FULFILLED (failed to meet condition)."
+                                                        }
+                                                    }
+                                                }
+                                            },
+                                            "appliedStrategies": {
+                                                "type": "array",
+                                                "description": "List of high-level strategies applied to achieve the expectation, each with specific configurations.",
+                                                "items": {
+                                                    "type": "object",
+                                                    "required": [
+                                                        "strategyId",
+                                                        "strategyType",
+                                                        "description",
+                                                        "configurations"
+                                                    ],
+                                                    "properties": {
+                                                        "strategyId": {
+                                                            "type": "string",
+                                                            "description": "Unique identifier for the strategy (e.g., 'S1'), used to link to outcomes and configurations."
+                                                        },
+                                                        "strategyType": {
+                                                            "type": "string",
+                                                            "enum": [
+                                                                "PowerOptimization",
+                                                                "AntennaOptimization",
+                                                                "TrafficManagement",
+                                                                "ResourceAllocation",
+                                                                "SleepModeActivation",
+                                                                "InterferenceMitigation"
+                                                            ],
+                                                            "description": "Type of strategy, indicating the high-level approach (e.g., 'PowerOptimization' for reducing energy use)."
+                                                        },
+                                                        "description": {
+                                                            "type": "string",
+                                                            "description": "Human-readable explanation of the strategy’s purpose (e.g., 'Reduce power consumption in targeted cells')."
+                                                        },
+                                                        "configurations": {
+                                                            "type": "array",
+                                                            "description": "List of specific settings or actions to implement the strategy.",
+                                                            "items": {
+                                                                "type": "object",
+                                                                "required": [
+                                                                    "configId",
+                                                                    "configType",
+                                                                    "parameters",
+                                                                    "affectedCells",
+                                                                    "appliedAt"
+                                                                ],
+                                                                "properties": {
+                                                                    "configId": {
+                                                                        "type": "string",
+                                                                        "description": "Unique identifier for the configuration (e.g., 'C1'), linking to the parent strategy."
+                                                                    },
+                                                                    "configType": {
+                                                                        "type": "string",
+                                                                        "enum": [
+                                                                            "PowerAdjustment",
+                                                                            "CellEnergySaving",
+                                                                            "MIMOConfig",
+                                                                            "AntennaGainConfig",
+                                                                            "BeamformingConfig"
+                                                                        ],
+                                                                        "description": "Type of configuration, specifying the action taken (e.g., 'PowerAdjustment' for changing power levels)."
+                                                                    },
+                                                                    "parameters": {
+                                                                        "type": "object",
+                                                                        "oneOf": [
+                                                                            {
+                                                                                "properties": {
+                                                                                    "configType": {
+                                                                                        "const": "PowerAdjustment"
+                                                                                    },
+                                                                                    "reductionPercentage": {
+                                                                                        "type": "number",
+                                                                                        "description": "Percentage to reduce transmission power (e.g., 10 for 10%)."
+                                                                                    }
+                                                                                },
+                                                                                "required": [
+                                                                                    "reductionPercentage"
+                                                                                ],
+                                                                                "additionalProperties": false
+                                                                            },
+                                                                            {
+                                                                                "properties": {
+                                                                                    "configType": {
+                                                                                        "const": "CellEnergySaving"
+                                                                                    },
+                                                                                    "technique": {
+                                                                                        "type": "string",
+                                                                                        "enum": [
+                                                                                            "cell_switch_off",
+                                                                                            "symbol_shutdown",
+                                                                                            "carrier_deactivation"
+                                                                                        ],
+                                                                                        "description": "The energy-saving technique to apply."
+                                                                                    },
+                                                                                    "techniqueParameters": {
+                                                                                        "type": "object",
+                                                                                        "properties": {
+                                                                                            "idleThreshold": {
+                                                                                                "type": "number",
+                                                                                                "description": "PRB utilization threshold for triggering the technique (e.g., 0.2 for 20%)."
+                                                                                            },
+                                                                                            "symbolDuration": {
+                                                                                                "type": "number",
+                                                                                                "description": "Duration of symbol shutdown in milliseconds (e.g., 0.5)."
+                                                                                            },
+                                                                                            "neighborCells": {
+                                                                                                "type": "array",
+                                                                                                "items": {
+                                                                                                    "type": "string"
+                                                                                                },
+                                                                                                "description": "Cells to handle redirected UEs for cell_switch_off."
+                                                                                            },
+                                                                                            "carrierId": {
+                                                                                                "type": "string",
+                                                                                                "description": "Identifier of the carrier to deactivate (e.g., 'secondary')."
+                                                                                            },
+                                                                                            "trafficThreshold": {
+                                                                                                "type": "number",
+                                                                                                "description": "Traffic threshold for carrier deactivation (e.g., 0.3 for 30%)."
+                                                                                            }
+                                                                                        },
+                                                                                        "required": [],
+                                                                                        "additionalProperties": false
+                                                                                    }
+                                                                                },
+                                                                                "required": [
+                                                                                    "technique",
+                                                                                    "techniqueParameters"
+                                                                                ],
+                                                                                "additionalProperties": false
+                                                                            },
+                                                                            {
+                                                                                "properties": {
+                                                                                    "configType": {
+                                                                                        "const": "MIMOConfig"
+                                                                                    },
+                                                                                    "mimoLayers": {
+                                                                                        "type": "string",
+                                                                                        "enum": [
+                                                                                            "2x2",
+                                                                                            "4x4",
+                                                                                            "8x8"
+                                                                                        ],
+                                                                                        "description": "Number of MIMO layers (e.g., '2x2')."
+                                                                                    },
+                                                                                    "purpose": {
+                                                                                        "type": "string",
+                                                                                        "enum": [
+                                                                                            "energy_saving",
+                                                                                            "correlation_rebalance",
+                                                                                            "interference_mitigation",
+                                                                                            "throughput_optimization"
+                                                                                        ],
+                                                                                        "description": "Purpose of the MIMO adjustment."
+                                                                                    },
+                                                                                    "channelCorrelationThreshold": {
+                                                                                        "type": "number",
+                                                                                        "description": "Threshold for channel correlation to trigger rebalancing (e.g., 0.8)."
+                                                                                    },
+                                                                                    "interferenceThreshold": {
+                                                                                        "type": "number",
+                                                                                        "description": "Interference level threshold in dBm to trigger mitigation (e.g., -80)."
+                                                                                    }
+                                                                                },
+                                                                                "required": [
+                                                                                    "mimoLayers",
+                                                                                    "purpose"
+                                                                                ],
+                                                                                "additionalProperties": false
+                                                                            },
+                                                                            {
+                                                                                "properties": {
+                                                                                    "configType": {
+                                                                                        "const": "AntennaGainConfig"
+                                                                                    },
+                                                                                    "gain_dB": {
+                                                                                        "type": "number",
+                                                                                        "description": "Antenna gain in dB (e.g., 15)."
+                                                                                    }
+                                                                                },
+                                                                                "required": [
+                                                                                    "gain_dB"
+                                                                                ],
+                                                                                "additionalProperties": false
+                                                                            },
+                                                                            {
+                                                                                "properties": {
+                                                                                    "configType": {
+                                                                                        "const": "BeamformingConfig"
+                                                                                    },
+                                                                                    "beamAngle": {
+                                                                                        "type": "number",
+                                                                                        "description": "Beamforming angle in degrees (e.g., 30)."
+                                                                                    }
+                                                                                },
+                                                                                "required": [
+                                                                                    "beamAngle"
+                                                                                ],
+                                                                                "additionalProperties": false
+                                                                            }
+                                                                        ]
+                                                                    },
+                                                                    "affectedCells": {
+                                                                        "type": "array",
+                                                                        "items": {
+                                                                            "type": "string"
+                                                                        },
+                                                                        "description": "List of cell IDs affected by the configuration (e.g., ['Cell_1', 'Cell_2'])."
+                                                                    },
+                                                                    "appliedAt": {
+                                                                        "type": "string",
+                                                                        "format": "date-time",
+                                                                        "description": "Timestamp when the configuration was applied, in ISO 8601 format (e.g., '2023-10-27T22:05:00Z')."
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            },
+                                            "contextualData": {
+                                                "type": "object",
+                                                "description": "Quantitative and qualitative data describing network conditions during the intent’s period, aiding outcome analysis.",
+                                                "required": [
+                                                    "averagePRBUtilization",
+                                                    "totalThroughput",
+                                                    "activeUsers",
+                                                    "pmDataReference"
+                                                ],
+                                                "properties": {
+                                                    "averagePRBUtilization": {
+                                                        "type": "number",
+                                                        "description": "Average Physical Resource Block utilization percentage (0-100) across the subnetwork during the intent period."
+                                                    },
+                                                    "totalThroughput": {
+                                                        "type": "number",
+                                                        "description": "Aggregate throughput in Mbps for the subnetwork during the intent period."
+                                                    },
+                                                    "activeUsers": {
+                                                        "type": "number",
+                                                        "description": "Average number of connected users in the subnetwork during the intent period."
+                                                    },
+                                                    "weatherCondition": {
+                                                        "type": "string",
+                                                        "description": "Weather condition impacting signal propagation (e.g., 'CLEAR', 'RAIN'), if relevant."
+                                                    },
+                                                    "interferenceLevel": {
+                                                        "type": "number",
+                                                        "description": "Average interference level in dBm, indicating signal quality during the intent period."
+                                                    },
+                                                    "pmDataReference": {
+                                                        "type": "object",
+                                                        "description": "Reference to time-series performance metrics in the PM database for detailed analysis of dynamics.",
+                                                        "required": [
+                                                            "databaseId",
+                                                            "timeRange",
+                                                            "metrics"
+                                                        ],
+                                                        "properties": {
+                                                            "databaseId": {
+                                                                "type": "string",
+                                                                "description": "Unique identifier for the PM dataset (e.g., 'PM_20231027_2200') containing time-series data."
+                                                            },
+                                                            "timeRange": {
+                                                                "type": "object",
+                                                                "description": "Time period of the PM data, matching the intent’s TargetAssuranceTime.",
+                                                                "required": [
+                                                                    "start",
+                                                                    "end"
+                                                                ],
+                                                                "properties": {
+                                                                    "start": {
+                                                                        "type": "string",
+                                                                        "format": "date-time",
+                                                                        "description": "Start timestamp of the PM data in ISO 8601 format (e.g., '2023-10-27T22:00:00Z')."
+                                                                    },
+                                                                    "end": {
+                                                                        "type": "string",
+                                                                        "format": "date-time",
+                                                                        "description": "End timestamp of the PM data in ISO 8601 format (e.g., '2023-10-28T06:00:00Z')."
+                                                                    }
+                                                                }
+                                                            },
+                                                            "metrics": {
+                                                                "type": "array",
+                                                                "items": {
+                                                                    "type": "string"
+                                                                },
+                                                                "description": "List of metrics included in the PM data (e.g., ['prb_utilization', 'throughput'])."
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            },
+                                            "failureAnalysis": {
+                                                "type": "object",
+                                                "description": "Analysis of unfulfilled targets, providing reasons and suggestions for improvement, included only when targets fail.",
+                                                "required": [
+                                                    "failedTargets"
+                                                ],
+                                                "properties": {
+                                                    "failedTargets": {
+                                                        "type": "array",
+                                                        "description": "List of targets that were not fulfilled, with reasons and corrective actions.",
+                                                        "items": {
+                                                            "type": "object",
+                                                            "required": [
+                                                                "targetName",
+                                                                "reason",
+                                                                "suggestedAdjustment"
+                                                            ],
+                                                            "properties": {
+                                                                "targetName": {
+                                                                    "type": "string",
+                                                                    "description": "Name of the unfulfilled target (e.g., 'RANEnergyEfficiency')."
+                                                                },
+                                                                "reason": {
+                                                                    "type": "string",
+                                                                    "description": "Explanation of why the target was not met (e.g., 'High user density reduced efficiency')."
+                                                                },
+                                                                "suggestedAdjustment": {
+                                                                    "type": "string",
+                                                                    "description": "Recommended action to achieve the target in future attempts (e.g., 'Reduce power by 10% instead')."
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        "IntentConflictReport": {
+                            "type": "object",
+                            "description": "Reports conflicts between this intent and others, if any."
+                        },
+                        "IntentFeasibilityCheckReport": {
+                            "type": "object",
+                            "description": "Reports the feasibility of achieving the intent before execution."
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

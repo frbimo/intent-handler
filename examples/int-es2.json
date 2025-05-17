@@ -1,0 +1,94 @@
+{
+    "intent": {
+      "id": "Intent_5",
+      "userLabel": "RAN_Energy_Saving",
+      "intentExpectation": [
+        {
+          "expectationId": "1",
+          "expectationVerb": "ENSURE",
+          "expectationObject": [
+            {
+              "objectType": "RAN_SUBNETWORK"
+            },
+            {
+              "objectInstance": "SubNetwork_1"
+            },
+            {
+              "objectContexts": [
+                {
+                  "contextAttribute": "CoverageAreaPolygon",
+                  "contextCondition": "IS_ALL_OF",
+                  "contextValueRange": [
+                    {
+                      "convexGeoPolygon": [
+                        {
+                          "latitude": 31.2696,
+                          "longitude": 121.6322
+                        },
+                        {
+                          "latitude": 31.2668,
+                          "longitude": 121.6323
+                        },
+                        {
+                          "latitude": 31.2669,
+                          "longitude": 121.6412
+                        },
+                        {
+                          "latitude": 31.2696,
+                          "longitude": 121.6410
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "contextAttribute": "PLMN",
+                  "contextCondition": "IS_ALL_OF",
+                  "contextValueRange": [
+                    "46000"
+                  ]
+                },
+                {
+                  "contextAttribute": "DlFrequency",
+                  "contextCondition": "IS_ALL_OF",
+                  "contextValueRange": [
+                    {
+                      "arfcn": 384000
+                    }
+                  ]
+                },
+                {
+                  "contextAttribute": "RAT",
+                  "contextCondition": "IS_ALL_OF",
+                  "contextValueRange": [
+                    "NR"
+                  ]
+                },
+                {
+                  "contextAttribute": "TargetAssuranceTime",
+                  "contextCondition": "IS_EQUAL_TO",
+                  "contextValueRange": [
+                    {
+                      "startTime": "2025-10-27-22-00-00",
+                      "endTime": "2025-10-28-06-00-00"
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "expectationTargets": [
+            {
+              "targetName": "RANEnergyEfficiency",
+              "targetCondition": "IS_GREATER_THAN",
+              "targetValueRange": "400000",
+              "targetUnit": "bit/J"
+            }
+          ]
+        }
+      ],
+      "intentPriority": 6,
+      "observationPeriod": 60,
+      "intentReportReference": "IntentReport_5"
+    }
+  }

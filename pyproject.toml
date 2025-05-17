@@ -1,0 +1,16 @@
+[project]
+name = "intent-handler"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "langgraph>=0.4.3",
+    "ncclient>=0.6.19",
+    "openai>=1.78.1",
+    "pydantic>=2.11.4",
+    "requests>=2.32.3",
+]
+
+[tool.uv.workspace]
+members = ["intent_handler"]

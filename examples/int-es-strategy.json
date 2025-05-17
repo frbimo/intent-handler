@@ -1,0 +1,22 @@
+{
+    "appliedStrategies": [
+        {
+            "strategyId": "S1_Energy_001",
+            "strategyType": "EnergySaving",
+            "description": "reduce cell-specific transmission power during off-peak.",
+            "configurations": [
+                {
+                    "configId": "C1_Decrease_TxPower",
+                    "configType": "TxPowerAdjustment",
+                    "parameters": {
+                        "configuredMaxTxPower": "21"
+                    },
+                    "affectedCells": [
+                        "Cell_DA01"
+                    ],
+                    "appliedAt": "2025-04-22T00:01:00Z"
+                }
+            ]
+        }
+    ]
+}

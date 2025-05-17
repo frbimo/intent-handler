@@ -1,0 +1,83 @@
+{
+    "IntentFulfilmentReport": {
+        "intentFulfilmentInfo": {
+            "fulfilmentStatus": "FULFILLED",
+            "notFulfilledState": "ACKNOWLEDGED"
+        },
+        "expectationFulfilmentResult": [
+            {
+                "expectationId": "1",
+                "expectationFulfilmentInfo": {
+                    "fulfilmentStatus": "FULFILLED",
+                    "notFulfilledState": "ACKNOWLEDGED"
+                },
+                "targetFulfilmentResults": [
+                    {
+                        "targetName": "RANEnergyConsumption",
+                        "targetAchievedValue": 950,
+                        "targetUnit": "kWh",
+                        "targetStatus": "FULFILLED"
+                    },
+                    {
+                        "targetName": "RANEnergyEfficiency",
+                        "targetAchievedValue": 23,
+                        "targetUnit": "percentage",
+                        "targetStatus": "FULFILLED"
+                    },
+                    {
+                        "targetName": "AveULRANUEThpt",
+                        "targetAchievedValue": 120,
+                        "targetUnit": "Mbps",
+                        "targetStatus": "FULFILLED"
+                    },
+                    {
+                        "targetName": "AveDLRANUEThpt",
+                        "targetAchievedValue": 322,
+                        "targetUnit": "Mbps",
+                        "targetStatus": "FULFILLED"
+                    }
+                ],
+                "appliedStrategies": [
+                    {
+                        "strategyId": "S1",
+                        "strategyType": "PowerOptimization",
+                        "description": "Reduce power consumption in targeted cells to meet energy targets",
+                        "configurations": [
+                            {
+                                "configId": "C1",
+                                "configType": "PowerAdjustment",
+                                "parameters": {
+                                    "reductionPercentage": 10,
+                                    "affectedCells": [
+                                        "Cell_1",
+                                        "Cell_2"
+                                    ],
+                                    "appliedAt": "2023-10-27T22:05:00Z"
+                                }
+                            }
+                        ]
+                    }
+                ],
+                "contextualData": {
+                    "averagePRBUtilization": 75.5,
+                    "totalThroughput": 1200,
+                    "activeUsers": 150,
+                    "weatherCondition": "CLEAR",
+                    "interferenceLevel": -85,
+                    "pmDataReference": {
+                        "databaseId": "PM_20231027_2200",
+                        "timeRange": {
+                            "start": "2023-10-27T22:00:00Z",
+                            "end": "2023-10-28T06:00:00Z"
+                        },
+                        "metrics": [
+                            "prb_utilization",
+                            "throughput",
+                            "active_users"
+                        ]
+                    }
+                }
+            }
+        ]
+    }
+}

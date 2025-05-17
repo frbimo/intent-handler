@@ -1,0 +1,22 @@
+{
+    "appliedStrategies": [
+        {
+            "strategyId": "S1_Energy_002",
+            "strategyType": "EnergySaving",
+            "description": "Aggressively reduce cell-specific transmission power and starts turn-off procedure.",
+            "configurations": [
+                {
+                    "configId": "C1_Standby_Power",
+                    "configType": "PowerControl",
+                    "parameters": {
+                        "energySavingControl": "toBeEnergySaving"
+                    },
+                    "affectedCells": [
+                        "Cell_DA01"
+                    ],
+                    "appliedAt": "2025-04-22T00:01:00Z"
+                }
+            ]
+        }
+    ]
+}

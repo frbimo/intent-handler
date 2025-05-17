@@ -1,0 +1,208 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "type": "object",
+    "description": "Root object for the intent, containing expectations and reports for a 5G network management system.",
+    "properties": {
+        "intentReport": {
+            "type": "object",
+            "description": "Contains reports on intent fulfillment, conflicts, and feasibility checks.",
+            "properties": {
+                "IntentFulfilmentReport": {
+                    "type": "object",
+                    "description": "Reports the outcome of applying the intent, including achieved values, strategies, and contextual data.",
+                    "required": [
+                        "intentFulfilmentInfo",
+                        "expectationFulfilmentResult"
+                    ],
+                    "properties": {
+                        "intentFulfilmentInfo": {
+                            "type": "object",
+                            "description": "Summarizes the overall fulfillment status of the intent across all expectations.",
+                            "required": [
+                                "fulfilmentStatus",
+                                "notFulfilledState"
+                            ],
+                            "properties": {
+                                "fulfilmentStatus": {
+                                    "type": "string",
+                                    "enum": [
+                                        "FULFILLED",
+                                        "PARTIALLY_FULFILLED",
+                                        "NOT_FULFILLED"
+                                    ],
+                                    "description": "Overall status of intent fulfillment: FULFILLED (all targets met), PARTIALLY_FULFILLED (some targets met), or NOT_FULFILLED (no targets met)."
+                                },
+                                "notFulfilledState": {
+                                    "type": "string",
+                                    "enum": [
+                                        "ACKNOWLEDGED",
+                                        "PENDING",
+                                        "REJECTED"
+                                    ],
+                                    "description": "State of unfulfilled targets: ACKNOWLEDGED (noted but no action taken), PENDING (under review), or REJECTED (deemed unachievable)."
+                                }
+                            }
+                        },
+                        "expectationFulfilmentResult": {
+                            "type": "array",
+                            "description": "Detailed results for each expectation, including target outcomes, strategies, context, and failure analysis.",
+                            "items": [
+                                {
+                                    "expectationId": "RAN_Energy_Saving_001",
+                                    "expectationFulfilmentInfo": {
+                                        "fulfilmentStatus": "FULFILLED",
+                                        "notFulfilledState": null
+                                    },
+                                    "targetFulfilmentResults": [
+                                        {
+                                            "targetName": "RANEnergyConsumption",
+                                            "targetAchievedValue": 16.2,
+                                            "targetUnit": "percentage",
+                                            "targetStatus": "FULFILLED"
+                                        }
+                                    ],
+                                    "appliedStrategies": [
+                                        {
+                                            "strategyId": "S1_Energy_001",
+                                            "strategyType": "PowerOptimization",
+                                            "description": "Aggressively reduce cell-specific transmission power during off-peak.",
+                                            "configurations": [
+                                                {
+                                                    "configId": "C1_Power_005",
+                                                    "configType": "PowerAdjustment",
+                                                    "parameters": {
+                                                        "reductionPercentage": 18
+                                                    },
+                                                    "affectedCells": [
+                                                        "Cell_DA01",
+                                                        "Cell_DA02",
+                                                        "Cell_DA03"
+                                                    ],
+                                                    "appliedAt": "2025-04-22T00:01:00Z"
+                                                },
+                                                {
+                                                    "configId": "C2_Sleep_001",
+                                                    "configType": "SleepModeActivation",
+                                                    "parameters": {
+                                                        "durationSeconds": 1800
+                                                    },
+                                                    "affectedCells": [
+                                                        "Cell_DA02"
+                                                    ],
+                                                    "appliedAt": "2025-04-22T02:30:00Z"
+                                                }
+                                            ]
+                                        }
+                                    ],
+                                    "contextualData": {
+                                        "averagePRBUtilization": 15.2,
+                                        "totalThroughput": 1250.5,
+                                        "activeUsers": 550,
+                                        "weatherCondition": "CLEAR",
+                                        "interferenceLevel": -95.3,
+                                        "pmDataReference": {
+                                            "databaseId": "PM_20250422",
+                                            "timeRange": {
+                                                "start": "2025-04-22T00:00:00Z",
+                                                "end": "2025-04-22T06:00:00Z"
+                                            },
+                                            "metrics": [
+                                                "ran_energy_consumption",
+                                                "prb_utilization"
+                                            ]
+                                        }
+                                    },
+                                    "failureAnalysis": null
+                                },
+                                {
+                                    "expectationId": "User_Throughput_Increase_002",
+                                    "expectationFulfilmentInfo": {
+                                        "fulfilmentStatus": "PARTIALLY_FULFILLED",
+                                        "notFulfilledState": "ACKNOWLEDGED"
+                                    },
+                                    "targetFulfilmentResults": [
+                                        {
+                                            "targetName": "AveDLRANUEThpt",
+                                            "targetAchievedValue": 8.5,
+                                            "targetUnit": "percentage",
+                                            "targetStatus": "NOT_FULFILLED"
+                                        }
+                                    ],
+                                    "appliedStrategies": [
+                                        {
+                                            "strategyId": "S2_Throughput_001",
+                                            "strategyType": "ResourceAllocation",
+                                            "description": "Prioritize resource allocation for premium users during peak hours.",
+                                            "configurations": [
+                                                {
+                                                    "configId": "C3_Sched_001",
+                                                    "configType": "SchedulingConfig",
+                                                    "parameters": {
+                                                        "priorityLevel": "high",
+                                                        "resourceBoostPercentage": 12
+                                                    },
+                                                    "affectedCells": [
+                                                        "Cell_DA04",
+                                                        "Cell_DA05"
+                                                    ],
+                                                    "appliedAt": "2025-04-22T18:05:00Z"
+                                                }
+                                            ]
+                                        },
+                                        {
+                                            "strategyId": "S3_MIMO_002",
+                                            "strategyType": "AntennaOptimization",
+                                            "description": "Adjust MIMO layer configuration to improve data rates.",
+                                            "configurations": [
+                                                {
+                                                    "configId": "C4_MIMO_001",
+                                                    "configType": "MIMOConfig",
+                                                    "parameters": {
+                                                        "numLayersDL": 4
+                                                    },
+                                                    "affectedCells": [
+                                                        "Cell_DA04",
+                                                        "Cell_DA05"
+                                                    ],
+                                                    "appliedAt": "2025-04-22T18:10:00Z"
+                                                }
+                                            ]
+                                        }
+                                    ],
+                                    "contextualData": {
+                                        "averagePRBUtilization": 85.7,
+                                        "totalThroughput": 4500.2,
+                                        "activeUsers": 1200,
+                                        "weatherCondition": "LIGHT_RAIN",
+                                        "interferenceLevel": -88.1,
+                                        "pmDataReference": {
+                                            "databaseId": "PM_20250422_PEAK",
+                                            "timeRange": {
+                                                "start": "2025-04-22T18:00:00Z",
+                                                "end": "2025-04-22T22:00:00Z"
+                                            },
+                                            "metrics": [
+                                                "dl_user_throughput",
+                                                "prb_utilization",
+                                                "mimo_rank"
+                                            ]
+                                        }
+                                    },
+                                    "failureAnalysis": {
+                                        "failedTargets": [
+                                            {
+                                                "targetName": "AveDLRANUEThpt",
+                                                "reason": "Unexpectedly high network congestion during peak hours limited the effectiveness of resource prioritization. Light rain may have also slightly impacted signal quality.",
+                                                "suggestedAdjustment": "Increase resource boost percentage to 15% and further optimize scheduling algorithms for premium users. Investigate impact of light rain on throughput."
+                                            }
+                                        ]
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

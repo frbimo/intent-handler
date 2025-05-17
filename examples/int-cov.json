@@ -1,0 +1,109 @@
+{
+    "intent": {
+        "id": "Intent_5",
+        "userLabel": "Coverage_Performance_Assurance",
+        "intentExpectation": [
+            {
+                "expectationId": "1",
+                "expectationVerb": "ENSURE",
+                "expectationObject": [
+                    {
+                        "objectType": "RAN_SUBNETWORK"
+                    },
+                    {
+                        "objectInstance": "SubNetwork_1"
+                    },
+                    {
+                        "objectContexts": [
+                            {
+                                "contextAttribute": "CoverageAreaPolygon",
+                                "contextCondition": "IS_ALL_OF",
+                                "contextValueRange": [
+                                    {
+                                        "convexGeoPolygon": [
+                                            {
+                                                "latitude": 31.2696,
+                                                "longitude": 121.6322
+                                            },
+                                            {
+                                                "latitude": 31.2668,
+                                                "longitude": 121.6323
+                                            },
+                                            {
+                                                "latitude": 31.2669,
+                                                "longitude": 121.6412
+                                            },
+                                            {
+                                                "latitude": 31.2696,
+                                                "longitude": 121.6410
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "contextAttribute": "PLMN",
+                                "contextCondition": "IS_ALL_OF",
+                                "contextValueRange": [
+                                    "46000"
+                                ]
+                            },
+                            {
+                                "contextAttribute": "DlFrequency",
+                                "contextCondition": "IS_ALL_OF",
+                                "contextValueRange": [
+                                    {
+                                        "arfcn": 384000
+                                    }
+                                ]
+                            },
+                            {
+                                "contextAttribute": "RAT",
+                                "contextCondition": "IS_ALL_OF",
+                                "contextValueRange": [
+                                    "NR"
+                                ]
+                            },
+                            {
+                                "contextAttribute": "TargetAssuranceTime",
+                                "contextCondition": "IS_EQUAL_TO",
+                                "contextValueRange": [
+                                    {
+                                        "startTime": "2025-10-27-22-00-00",
+                                        "endTime": "2025-10-28-06-00-00"
+                                    }
+                                ]
+                            }
+                        ]
+                    }
+                ],
+                "expectationTargets": [
+                    {
+                        "targetName": "WeakRSRPRatio",
+                        "targetCondition": "IS_LESS_THAN",
+                        "targetValueRange": "10",
+                        "targetContexts": {
+                            "contextAttribute": "WeakRSRPThreshold",
+                            "contextCondition": "IS_LESS_THAN",
+                            "contextValueRange": "-130.00"
+                        }
+                    },
+                    {
+                        "targetName": "LowSINRRatio",
+                        "targetCondition": "IS_LESS_THAN",
+                        "targetValueRange": "5",
+                        "targetContexts": {
+                            "contextAttribute": "LowSINRThreshold",
+                            "contextCondition": "IS_LESS_THAN",
+                            "contextValueRange": "-20.00"
+                        }
+                    }
+                ]
+            }
+        ],
+        "intentPriority": 6,
+        "observationPeriod": 60,
+        "intentReportReference": "IntentReport_5"
+    }
+}
+

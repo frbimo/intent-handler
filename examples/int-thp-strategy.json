@@ -1,0 +1,24 @@
+{
+    "appliedStrategies": [
+        {
+            "strategyId": "S1_Max_Throughput",
+            "strategyType": "Slicing",
+            "description": "maximize throughput by increasing the RB allocation for the cell.",
+            "configurations": [
+                {
+                    "configId": "C1_Increase_RB",
+                    "configType": "SlicingConfiguration",
+                    "parameters": {
+                        "configuredMaxTxPower": "21",
+                        "rRMPolicyDedicatedRatio": "0.6",
+                        "rRMPolicyMaxRatio": "0.8"
+                    },
+                    "affectedCells": [
+                        "Cell_DA01"
+                    ],
+                    "appliedAt": "2025-04-22T00:01:00Z"
+                }
+            ]
+        }
+    ]
+}
