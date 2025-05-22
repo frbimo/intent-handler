@@ -82,3 +82,14 @@ Monitoring & Observability: Detailed logging, tracing, and metrics for system pe
 - Scalability: Ensuring the Core Handler and Specialized Agents can handle a large number of concurrent intents.
 - Security: Authentication and authorization for API endpoints.
 - Dynamic Capability Discovery: More advanced mechanisms beyond simple registration.
+
+
+## How to use
+### Install dependencies
+uv add -r requirements.txt
+
+### Setup env
+source setup_env.sh
+
+### run the program
+uv run main.py

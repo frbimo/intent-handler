@@ -11,7 +11,7 @@ from src.netconf_cli import NETCONFCLIENT
 
 import re
 import logging
-
+import os
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -99,7 +99,7 @@ class IntentState(BaseModel):
 # }
 
 CELL_CAPABILITIES = {
-    "Cell_1": {
+    "1": {
         "maxBandwidth_MHz": 100,
         "defaultBandwidth_MHz": 40,
         "supportedARFCNs": [636000, 638000],
@@ -113,7 +113,7 @@ CELL_CAPABILITIES = {
             }
         }
     },
-    "Cell_3": {
+    "2": {
         "maxBandwidth_MHz": 40,
         "defaultBandwidth_MHz": 20,
         "supportedARFCNs": [636000],
@@ -130,7 +130,7 @@ CELL_CAPABILITIES = {
             }
         }
     },
-    "Cell_4": {
+    "3": {
         "maxBandwidth_MHz": 40,
         "defaultBandwidth_MHz": 20,
         "supportedARFCNs": [636000],
@@ -248,10 +248,19 @@ def store_attempt(intent_id: str, strategies: Dict, outcomes: List[Dict], failur
 #     print(f"Applying patches: {json.dumps(patches, indent=2)}")
 #     return True
 
+base_url = os.getenv("OPENAI_BASE_URL")
+api_key = os.getenv("OPENAI_API_KEY")
+
+if not base_url:
+    raise ValueError("OPENAI_BASE_URL environment variable not set.")
+if not api_key:
+    raise ValueError("OPENAI_API_KEY environment variable not set.")
+
 client = OpenAI(
-  base_url = "",
-  api_key = ""
+    base_url = base_url,
+    api_key = api_key
 )
+
 
 def call_llm(messages: str) -> Dict:
     """Call API to generate strategies and configurations."""
@@ -440,40 +449,67 @@ CELL_CAPABILITIES: {json.dumps(CELL_CAPABILITIES)}
 Instructions:
 - STRATEGY_DATABASE lists available strategyType and configType. Use these or propose new strategyType if needed.
 - CONFIG_TEMPLATES defines configuration templates. Use these or propose new configType if justified.
-- Proposed new configType should only contain supportedConfigs within CELL_CAPABILITIES.
+- Proposed new configType should only contain supportedConfigs within CELL_CAPABILITIES. CELL_CAPABILITIES categorized by cell id.
 - Relevant Past Attempts include successful or failed strategies. Reuse successful ones or learn from failures.
 - For each intent target, select or propose a strategy based on PM Summary and intent requirements.
-- Minimize risks (e.g., avoid high bandwidth during interference spikes).
 - Generate one configuration per affected cell.
+- If object target cell id is not specified or is not within cell capabilities database, reject the intent.
 - Output JSON with:
   - result: {{appliedStrategies: [{{strategyId, strategyType, configurations: [{{configId, configType, parameters, affectedCells, appliedAt}}]}}]}}
   - explanation: String detailing decisions, trade-offs, risk mitigation
   - error: Null or error message
-Example:
+
+The following are examples for the output JSON:
+Examples#1:
 ```json
 {{
   "result": {{
     "appliedStrategies": [
       {{
         "strategyId": "S1",
-        "strategyType": "ThroughputOptimization",
+        "strategyType": "RANEnergyEfficiency",
         "configurations": [
           {{
             "configId": "C1",
-            "configType": "BandwidthConfig",
+            "configType": "TxControl",
             "parameters": {{
-              "ChannelBandwidthDL": 40,
-              "affectedCells": ["Cell_1"],
-              "ARFCNDL": 636000
+              "antennaMaskName": "S7/NR1/C1:12x8",
+              "antennaMask": "1111111111111111111111111111111111111111111111111111000000000000",
             }},
-            "affectedCells": ["Cell_1"],
+            "affectedCells": ["1"],
             "appliedAt": "2025-04-28T10:00:00Z"
           }}
         ]
       }}
     ]
   }},
-  "explanation": "Selected 40 MHz to balance throughput and interference",
+  "explanation": "Parameters value serve to turn off array of mask to save energy",
+  "error": null
+}}
+```
+Examples#2:
+```json
+{{
+  "result": {{
+    "appliedStrategies": [
+      {{
+        "strategyId": "S2",
+        "strategyType": "RANEnergyEfficiency",
+        "configurations": [
+          {{
+            "configId": "C1",
+            "configType": "TxConfig",
+            "parameters": {{
+              "configuredMaxTxPower": 20
+            }},
+            "affectedCells": ["2"],
+            "appliedAt": "2025-04-28T10:00:00Z"
+          }}
+        ]
+      }}
+    ]
+  }},
+  "explanation": "Selected 20 dbm tx power to reduce energy consumption",
   "error": null
 }}
 ```
@@ -520,7 +556,6 @@ Example:
                 }]
             }
         return state
-
 
     # Generate patches for all affected cells
     patches = {}
@@ -628,7 +663,12 @@ def route_main_agent(state: IntentState) -> str:
 
 def data_agent_node(state: IntentState) -> IntentState:
     print(f"Inside function: {inspect.currentframe().f_code.co_name}")
-
+    
+    cell_id = ""
+    for strategy in state.strategies:
+        for config in strategy.get("configurations", []):
+            cell_id = config["affectedCells"][0]
+            # if each in CELL_CAPABILITIES[config["affectedCells"][0]]:
 
     pm_data = state.pm_data
     if not pm_data.get("subnetwork"):
@@ -639,7 +679,7 @@ def data_agent_node(state: IntentState) -> IntentState:
     # Simulate fetching real PM metrics (replace with actual API/database call)
     real_metrics = {
         "subnetwork": pm_data["subnetwork"],
-        "cell_id": pm_data.get("cell_id", "Cell_1"),  # Default to Cell_1 if not specified
+        "cell_id": pm_data.get("cell_id", cell_id),  # Default to Cell_1 if not specified
         "start_time": pm_data["start_time"],
         "end_time": pm_data["end_time"],
         "activeUsers": 50,  # Example metric
@@ -652,16 +692,25 @@ def data_agent_node(state: IntentState) -> IntentState:
     return state
 
 
-
 def orchestrator_agent_node(state: IntentState) -> IntentState:
     """Apply strategies to the network."""
     state.applied = True  # Simulate application
     for strategy in state.strategies:
         for config in strategy.get("configurations", []):
-            print("##config submitted \n",config["parameters"])
+            for each in config["parameters"]:
+                if each in CELL_CAPABILITIES[config["affectedCells"][0]]["configurableParameters"]["parameters"]:
+                    new_tx_power = config["parameters"][each]
+                    print(f"Applying {each} with value {new_tx_power} to {config['affectedCells'][0]}")
+                else:
+                    print(f"Invalid parameter {each} for cell {config['affectedCells'][0]}")
+           
 
-    # netconf_client = NETCONFCLIENT(target_carrier_id, target_gnbdu_id)
-    # netconf_client.configure_tx_power(new_tx_power)
+    object_target = intent["intent"]["intentExpectation"]["expectationObject"]["ObjectTarget"]
+    print("##object_target \n",object_target)
+    
+    for each in object_target:
+        netconf_client = NETCONFCLIENT(object_target, object_target)
+        netconf_client.configure_tx_power(new_tx_power)
 
     if state.attempt_count > 2:
         state.outcomes = [
@@ -714,7 +763,6 @@ def build_graph():
 # Example usage
 
 
-
 if __name__ == "__main__":
     graph = build_graph()
 
@@ -724,7 +772,7 @@ if __name__ == "__main__":
             "intentExpectation": {
                 "expectationObject": {
                     "objectInstance": "SubNetwork_1",
-                    "ObjectTarget": ["Cell_3"]
+                    "ObjectTarget": ["4"]
                     },
                 "expectationTargets": [
                     # {targetName": "RANEnergyConsumption", "targetCondition": "IS_LESS_THAN", "targetValue": 1000, "targetUnit": "W"},
