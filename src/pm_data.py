@@ -23,6 +23,7 @@ def get_latest_xml_file_by_time(directory_path, filename_pattern=r'B?(\d{8})\.(\
     latest_file = None
     latest_timestamp = None
 
+
     if not os.path.isdir(directory_path):
         print(f"Error: Directory '{directory_path}' not found.")
         return None
@@ -55,7 +56,7 @@ def get_latest_xml_file_by_time(directory_path, filename_pattern=r'B?(\d{8})\.(\
     
     return latest_file
 
-def parse_measurement_data(xml_file_path, filter_gnb_du=None, filter_nrcelldu=None):
+def parse_measurement_data(xml_file_path, filter_gnb_du=None, filter_nrcelldu=None)->str:
     """
     Opens and reads an XML measurement data file, filters data based on
     GnbDuFunction and NrCellDu, and returns the parsed data as JSON.
@@ -135,7 +136,8 @@ def parse_measurement_data(xml_file_path, filter_gnb_du=None, filter_nrcelldu=No
                     if p_value and p_value in meas_types:
                         param_name = meas_types[p_value]
                         try:
-                            target_cell_parameters[param_name] = float(r_tag.text)
+                            float_val = float(r_tag.text)
+                            target_cell_parameters[param_name] = int(round(float_val))
                         except (ValueError, TypeError):
                             target_cell_parameters[param_name] = r_tag.text
         
@@ -150,33 +152,59 @@ def parse_measurement_data(xml_file_path, filter_gnb_du=None, filter_nrcelldu=No
     except Exception as e:
         print(f"An unexpected error occurred: {e}")
         return json.dumps({})
+    
+def get_measurement_data(filter_gnb_du=None, filter_nrcelldu=None)-> str:
+    """
+    Wrapper function to get measurement data from an XML file.
+    This function is a placeholder for any additional processing or
+    integration with other components in the system.
+
+    Args:
+        xml_file_path (str): The path to the XML measurement data file.
+        filter_gnb_du (int, optional): The GnbDuFunction ID to filter by.
+                                       If None, no filter is applied.
+        filter_nrcelldu (int, optional): The NrCellDu ID to filter by.
+                                         If None, no filter is applied.
+
+    Returns:
+        str: A JSON string containing the filtered measurement data.
+    """
+    target_directory = "examples/measdata" # Change this to your actual directory
+    filter_gnb_du = int(filter_gnb_du) if filter_gnb_du else None
+    filter_nrcelldu = int(filter_nrcelldu) if filter_nrcelldu else None
+    latest_file_path = get_latest_xml_file_by_time(target_directory)
+    return parse_measurement_data(latest_file_path, filter_gnb_du, filter_nrcelldu)
 # --- Example Usage ---
 
-file_path = "measdata.xml"
-# target_directory = "". # Change this to your actual directory
+# # file_path = "measdata.xml"
+# target_directory = "examples/measdata" # Change this to your actual directory
 
 # latest_file_path = get_latest_xml_file_by_time(target_directory)
 
-# Example 1: Read all data
-print("--- All Measurement Data ---")
-all_data_json = parse_measurement_data(file_path)
-print(all_data_json)
-print("-" * 30 + "\n")
+# # Example 1: Read all data
+# print("--- All Measurement Data ---")
+# all_data_json = parse_measurement_data(latest_file_path)
+# print(all_data_json)
+# print("-" * 30 + "\n")
 
-# Example 2: Filter by GnbDuFunction=1
-print("--- Filtered for GnbDuFunction=1 ---")
-filtered_data_gnb1_json = parse_measurement_data(file_path, filter_gnb_du=1)
-print(filtered_data_gnb1_json)
-print("-" * 30 + "\n")
+# # Example 2: Filter by GnbDuFunction=1
+# print("--- Filtered for GnbDuFunction=1 ---")
+# filtered_data_gnb1_json = parse_measurement_data(latest_file_path, filter_gnb_du=1)
+# print(filtered_data_gnb1_json)
+# print("-" * 30 + "\n")
 
-# Example 3: Filter by GnbDuFunction=2 and NrCellDu=2
-print("--- Filtered for GnbDuFunction=2, NrCellDu=2 ---")
-filtered_data_gnb2_cell2_json = parse_measurement_data(file_path, filter_gnb_du=2, filter_nrcelldu=2)
-print(filtered_data_gnb2_cell2_json)
-print("-" * 30 + "\n")
+# # Example 3: Filter by GnbDuFunction=2 and NrCellDu=2
+# print("--- Filtered for GnbDuFunction=2, NrCellDu=2 ---")
+# filtered_data_gnb2_cell2_json = parse_measurement_data(latest_file_path, filter_gnb_du=2, filter_nrcelldu=2)
+# print(filtered_data_gnb2_cell2_json)
+# print("-" * 30 + "\n")
 
-# Example 4: Filter for a non-existent combination (should return empty measurements)
-print("--- Filtered for GnbDuFunction=99, NrCellDu=99 (non-existent) ---")
-non_existent_data_json = parse_measurement_data(file_path, filter_gnb_du=99, filter_nrcelldu=99)
-print(non_existent_data_json)
-print("-" * 30 + "\n")
+# # Example 4: Filter for a non-existent combination (should return empty measurements)
+# print("--- Filtered for GnbDuFunction=99, NrCellDu=99 (non-existent) ---")
+# non_existent_data_json = parse_measurement_data(latest_file_path, filter_gnb_du=99, filter_nrcelldu=99)
+# print(non_existent_data_json)
+# print("-" * 30 + "\n")
+
+# print("--- Filtered for GnbDuFunction=99, NrCellDu=99 (non-existent) ---")
+# print(get_measurement_data(2,"2"))
+# print("-" * 30 + "\n")

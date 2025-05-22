@@ -8,6 +8,7 @@ from uuid import uuid4
 from enum import Enum
 from langchain_core.runnables.graph import CurveStyle, MermaidDrawMethod, NodeStyles
 from src.netconf_cli import NETCONFCLIENT
+from src.pm_data import get_measurement_data
 
 import re
 import logging
@@ -428,6 +429,7 @@ def strategy_agent(state: IntentState) -> IntentState:
             state.history_summary = {}
     if pm_data_needed:
         state.pm_data = {"subnetwork": subnetwork, "start_time": start_time, "end_time": end_time}
+        
         # print("i need pm_data_needed")
         return state
 
@@ -441,12 +443,14 @@ Generate appliedStrategies for intent {intent_id} targeting {subnetwork} {object
 Intent Targets: {json.dumps(targets)}
 Relevant Past Attempts: {json.dumps(history_summary["relevant_attempts"])}
 Previous Failure: {json.dumps(prev_failure)}
+Current Network State: {json.dumps(state.pm_data)}
 
 STRATEGY_DATABASE: {json.dumps(STRATEGY_DATABASE)}
 CONFIG_TEMPLATES: {json.dumps(CONFIG_TEMPLATES)}
 CELL_CAPABILITIES: {json.dumps(CELL_CAPABILITIES)}
 
 Instructions:
+- If Current Network State is not present, you cannot generate appliedStrategies and should return error.
 - STRATEGY_DATABASE lists available strategyType and configType. Use these or propose new strategyType if needed.
 - CONFIG_TEMPLATES defines configuration templates. Use these or propose new configType if justified.
 - Proposed new configType should only contain supportedConfigs within CELL_CAPABILITIES. CELL_CAPABILITIES categorized by cell id.
@@ -663,11 +667,16 @@ def route_main_agent(state: IntentState) -> str:
 
 def data_agent_node(state: IntentState) -> IntentState:
     print(f"Inside function: {inspect.currentframe().f_code.co_name}")
-    
+
     cell_id = ""
-    for strategy in state.strategies:
-        for config in strategy.get("configurations", []):
-            cell_id = config["affectedCells"][0]
+    for each in state.intent["intent"]["intentExpectation"]["expectationObject"]["ObjectTarget"]:
+        if each in CELL_CAPABILITIES:
+            cell_id = each
+            break
+
+    # for strategy in state.strategies:
+    #     for config in strategy.get("configurations", []):
+    #         cell_id = config["affectedCells"][0]
             # if each in CELL_CAPABILITIES[config["affectedCells"][0]]:
 
     pm_data = state.pm_data
@@ -677,16 +686,11 @@ def data_agent_node(state: IntentState) -> IntentState:
         return state
 
     # Simulate fetching real PM metrics (replace with actual API/database call)
-    real_metrics = {
-        "subnetwork": pm_data["subnetwork"],
-        "cell_id": pm_data.get("cell_id", cell_id),  # Default to Cell_1 if not specified
-        "start_time": pm_data["start_time"],
-        "end_time": pm_data["end_time"],
-        "activeUsers": 50,  # Example metric
-        "interferenceLevel": -78,  # Example metric
-        "cellLoad": 0.8,  # Example metric
-        "throughput": 250  # Example metric (Mbps)
-    }
+    real_metrics = json.loads(get_measurement_data(cell_id,cell_id))
+    print("##real_metrics: ", real_metrics)
+    # real_metrics["cell_id"] = cell_id
+    # real_metrics["subnetwork"] = pm_data["subnetwork"]
+ 
     state.pm_data = real_metrics
     logger.info(f"Fetched real PM metrics for {pm_data['subnetwork']}: {real_metrics}")
     return state
@@ -742,8 +746,6 @@ def build_graph():
 
     # Edges
     graph.set_entry_point("strategy_agent")
-    # graph.add_edge("data_agent", "pm_data_analyzer_agent")
-    # graph.add_edge("pm_data_analyzer_agent", "history_agent")
     graph.add_edge("data_agent", "history_agent")
     graph.add_edge("history_agent", "strategy_agent")
     graph.add_edge("orchestrator_agent", "strategy_agent")
@@ -751,7 +753,6 @@ def build_graph():
     # Conditional edges
     graph.add_conditional_edges("strategy_agent", route_main_agent, {
         "data_agent": "data_agent",
-        # "pm_data_analyzer_agent": "pm_data_analyzer_agent",
         "history_agent": "history_agent",
         "orchestrator_agent": "orchestrator_agent",
         END: END,
@@ -772,7 +773,7 @@ if __name__ == "__main__":
             "intentExpectation": {
                 "expectationObject": {
                     "objectInstance": "SubNetwork_1",
-                    "ObjectTarget": ["4"]
+                    "ObjectTarget": ["2"]
                     },
                 "expectationTargets": [
                     # {targetName": "RANEnergyConsumption", "targetCondition": "IS_LESS_THAN", "targetValue": 1000, "targetUnit": "W"},
