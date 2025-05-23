@@ -206,7 +206,7 @@ class NETCONFCLIENT():
     def perform_action(self, index):
         xml_data = self.convert_to_xml(index)
         print(xml_data)
-        with manager.connect(host="192.168.8.28", port=30705, username="root", password="viavi", hostkey_verify=False) as m:
+        with manager.connect(host="192.168.8.28", port=30932, username="root", password="viavi", hostkey_verify=False) as m:
             try:
                 print("*** Server Capabilities ***")
                 for capability in m.server_capabilities:
@@ -279,7 +279,7 @@ class NETCONFCLIENT():
     #             logger.error(f"Failed to turn on the cell: {str(e)}")
 
     def configure_tx_power(self, new_tx_power):
-        with manager.connect(host="192.168.8.28", port=30705, username="root", password="viavi", hostkey_verify=False) as m:
+        with manager.connect(host="192.168.8.28", port=30932, username="root", password="viavi", hostkey_verify=False) as m:
             try:
                 # Perform the get-config operation with the XPath filter
                 subtree_filter = f"""
@@ -369,12 +369,76 @@ class NETCONFCLIENT():
                     print(f"GNBDUFunction with id '{self.target_gnbdu_id}' not found.")
             except Exception as e:
                 logger.error(f"Failed to turn off the cell: {str(e)}")
-        
+
+    def get_current_tx_power(self):
+        try:
+            with manager.connect(host="192.168.8.28", port=30932, username="root", password="viavi", hostkey_verify=False) as m:
+                # Use subtree filter to get NRSectorCarrier configuration
+                filter_xml = f'''
+                <ManagedElement xmlns="urn:3gpp:sa5:_3gpp-common-managed-element">
+                    <id>1193046</id>
+                    <GNBDUFunction xmlns="urn:3gpp:sa5:_3gpp-nr-nrm-gnbdufunction">
+                        <id>{self.target_gnbdu_id}</id>
+                        <NRSectorCarrier xmlns="urn:3gpp:sa5:_3gpp-nr-nrm-nrnetwork-nrsectorcarrier">
+                            <id>{self.target_carrier_id}</id>
+                        </NRSectorCarrier>
+                    </GNBDUFunction>
+                </ManagedElement>
+                '''
+                
+                result = m.get_config(source="running", filter=("subtree", filter_xml))
+                
+                # Define namespaces for parsing 
+                namespaces = {
+                    'ns0': 'urn:3gpp:sa5:_3gpp-common-managed-element',
+                    'ns1': 'urn:3gpp:sa5:_3gpp-nr-nrm-gnbdufunction',
+                    'ns3': 'urn:3gpp:sa5:_3gpp-nr-nrm-nrnetwork-nrsectorcarrier',
+                    'nc': 'urn:ietf:params:xml:ns:netconf:base:1.0'
+                }
+                
+                root = ET.fromstring(result.xml)
+                
+                # Find TX power value
+                tx_power_element = root.find('.//ns3:configuredMaxTxPower', namespaces=namespaces)
+                if tx_power_element is not None:
+                    return tx_power_element.text
+                else:
+                    logger.warning(f"configuredMaxTxPower not found for GNBDU ID '{self.target_gnbdu_id}' and Carrier ID '{self.target_carrier_id}'")
+                    return None
+                    
+        except Exception as e:
+            logger.error(f"Failed to get current TX power: {str(e)}")
+            return None
+
+      
 # if __name__ == "__main__":
 #     logging.basicConfig(level=logging.INFO)
 #     # netconf_client.perform_action_1(1)
 #     target_carrier_id = "2"
 #     target_gnbdu_id = "2"
-#     new_tx_power = "30"
+#     new_tx_power = "28"
 #     netconf_client = NETCONFCLIENT(target_carrier_id, target_gnbdu_id)
+
+
+#     print("=== Before Configuaration ===")
+#     current_tx_power = netconf_client.get_current_tx_power()
+#     if current_tx_power:
+#         print(f"Current TX Power: {current_tx_power} dBm")
+#     else:
+#         print("Unable to get TX Power value.")
+
 #     netconf_client.configure_tx_power(new_tx_power)
+
+#     print("\n=== After Configurattion ===")
+#     updated_tx_power = netconf_client.get_current_tx_power()
+#     if updated_tx_power:
+#         print(f"New TX Power: {updated_tx_power} dBm")
+        
+#         # Comparision
+#         if current_tx_power and updated_tx_power:
+#             if current_tx_power != updated_tx_power:
+#                 print(f"TX Power successfully updated from {current_tx_power} dBm to {updated_tx_power} dBm")
+#             else:
+#                 print(f"TX Power value unchanged, still {updated_tx_power} dBm")
+#     else:
+#         print("Unable to get new TX Power value.")
