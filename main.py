@@ -433,6 +433,17 @@ def strategy_agent(state: IntentState) -> IntentState:
         # print("i need pm_data_needed")
         return state
 
+    current_tx_power = {}
+    try: 
+        for cell_id in object_target:
+            if cell_id in CELL_CAPABILITIES:
+                netconf_client = NETCONFCLIENT(cell_id, cell_id)
+                tx_power_value = netconf_client.get_current_tx_power()
+                current_tx_power[cell_id] = tx_power_value
+    except Exception as e:
+        logger.warning(f"Failed to get current tx power: {e}")
+        current_tx_power = {"error": "Failed to retrieve tx power"}
+
     # Generate strategies
     # pm_summary = state.pm_summary["result"]
     history_summary = state.history_summary["result"]
@@ -444,6 +455,7 @@ Intent Targets: {json.dumps(targets)}
 Relevant Past Attempts: {json.dumps(history_summary["relevant_attempts"])}
 Previous Failure: {json.dumps(prev_failure)}
 Current Network State: {json.dumps(state.pm_data)}
+Current Tx Power: {json.dumps(current_tx_power)}
 
 STRATEGY_DATABASE: {json.dumps(STRATEGY_DATABASE)}
 CONFIG_TEMPLATES: {json.dumps(CONFIG_TEMPLATES)}
