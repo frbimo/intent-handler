@@ -170,10 +170,13 @@ def get_measurement_data(filter_gnb_du=None, filter_nrcelldu=None)-> str:
         str: A JSON string containing the filtered measurement data.
     """
     target_directory = "examples/measdata" # Change this to your actual directory
+    # target_directory = "/tmp/viavi/o1/pm_reports" # Change this to your actual directory
     filter_gnb_du = int(filter_gnb_du) if filter_gnb_du else None
     filter_nrcelldu = int(filter_nrcelldu) if filter_nrcelldu else None
     latest_file_path = get_latest_xml_file_by_time(target_directory)
+    print("file opened: ",latest_file_path)
     return parse_measurement_data(latest_file_path, filter_gnb_du, filter_nrcelldu)
+
 # --- Example Usage ---
 
 # # file_path = "measdata.xml"
