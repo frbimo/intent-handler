@@ -440,7 +440,7 @@ CELL_CAPABILITIES: {json.dumps(CELL_CAPABILITIES)}
 
 Instruction:
 - Select ONE `strategyType` from STRATEGY_DATABASE that seems most appropriate.
-- Propose initial `parameters` for this strategyType, considering PM data and CELL_CAPABILITIES.
+- Propose initial `parameters` for this strategyType, considering PM data and CELL_CAPABILITIES. Parameters to be adjusted should be within the capabilities of the target cells.
 - This will be the ONLY strategy type used and refined for this intent. Choose wisely.
 The following is an example for the output JSON: 
 ```json
@@ -529,7 +529,7 @@ Instruction:
 Previous parameters {state.current_config_parameters} resulted in outcomes {state.outcomes}.
 1. Analyze why previous parameters failed/underperformed.
 2. Propose *new parameters* for strategy type '{state.current_strategy_type}' to better meet targets.
-   Ensure parameters and values are within CELL_CAPABILITIES.
+   Parameters to be adjusted should be within the capabilities of the target cells.
 3. If this strategy type seems unrefinable (e.g., parameters at limits, no positive trend), set `give_up_on_this_strategy_type: true`.
 The following is an example for the output JSON: 
 ```json
@@ -703,6 +703,13 @@ def pm_evaluation_agent_node(state: IntentState) -> IntentState:
 
     # Calculate and add EE to the enriched PM data if it's a target or for LLM context
     calculated_ee_value = calculate_energy_efficiency(state.pm_data)
+
+    # debugging output
+    logger.info(f"Intent {intent_id}: Calculated EE value: {calculated_ee_value}")
+    logger.info(f"Intent {intent_id}: AvgPower: {state.pm_data.get('PEE.AvgPower', 'N/A')}")
+    logger.info(f"Intent {intent_id}: TotPdcpPduVolumeUl: {state.pm_data.get('QosFlow.TotPdcpPduVolumeUl', 'N/A')}")
+    logger.info(f"Intent {intent_id}: TotPdcpPduVolumeDl: {state.pm_data.get('QosFlow.TotPdcpPduVolumeDl', 'N/A')}")
+
     state.calculated_ee_metrics = {"RANEnergyEfficiencyLive": calculated_ee_value if calculated_ee_value is not None else "N/A_CALCULATION_FAILED"}
     if calculated_ee_value is not None:
         enriched_pm_data_for_llm["calculatedRANEnergyEfficiency"] = calculated_ee_value
