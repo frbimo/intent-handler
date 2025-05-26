@@ -336,7 +336,7 @@ class NETCONFCLIENT():
                                 print(tx_power_element.text)
                                 if tx_power_element is not None:
                                     tx_power_element.text = new_tx_power
-                                    print(f"Updated configuredMaxTxPower to '{new_tx_power}' in the local XML for GNBDU ID '{target_gnbdu_id}' and Carrier ID '{target_carrier_id}'.")
+                                    print(f"Updated configuredMaxTxPower to '{new_tx_power}' in the local XML for GNBDU ID '{self.target_gnbdu_id}' and Carrier ID '{self.target_carrier_id}'.")
 
                                     # Serialize the modified gnbdu_element back to XML
                                     gnbdu_config_xml = ET.tostring(found_gnbdu, encoding='utf-8').decode()
@@ -368,7 +368,7 @@ class NETCONFCLIENT():
                 else:
                     print(f"GNBDUFunction with id '{self.target_gnbdu_id}' not found.")
             except Exception as e:
-                logger.error(f"Failed to turn off the cell: {str(e)}")
+                logger.error(f"Failed to perform action: {str(e)}")
 
     def get_current_tx_power(self):
         try:
