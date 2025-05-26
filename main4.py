@@ -635,10 +635,21 @@ def data_agent_node(state: IntentState) -> IntentState:
     logger.info(f"Fetching PM data for cell: {cell_id_to_query}")
     try:
         raw_pm_data_str = get_measurement_data(cell_id_to_query, cell_id_to_query)
+        
         pm_metrics = json.loads(raw_pm_data_str)
         pm_metrics["queried_cell_id"] = cell_id_to_query
         pm_metrics["fetch_timestamp_utc"] = datetime.now(timezone.utc).isoformat()
         state.pm_data = pm_metrics
+
+        # obtain calculated metrics
+        calculated_ee_value = calculate_energy_efficiency(state.pm_data)
+        logger.info(f"Debug: pm_data: {state.pm_data}")
+        state.calculated_ee_metrics = {"RANEnergyEfficiency": calculated_ee_value if calculated_ee_value is not None else "N/A_CALCULATION_FAILED"}
+        logger.info(f"Debug: Calculated EE value: {calculated_ee_value}")
+        logger.info(f"Debug: AvgPower: {state.pm_data.get('PEE.AvgPower', 'N/A')}")
+        logger.info(f"Debug: TotPdcpPduVolumeUl: {state.pm_data.get('QosFlow.TotPdcpPduVolumeUl', 'N/A')}")
+        logger.info(f"Debug: TotPdcpPduVolumeDl: {state.pm_data.get('QosFlow.TotPdcpPduVolumeDl', 'N/A')}")
+
         logger.info(f"Fetched PM for {cell_id_to_query}: {list(pm_metrics.keys())}") # Log keys to verify content
     except Exception as e:
         logger.error(f"Error fetching/parsing PM for {cell_id_to_query}: {e}")
@@ -692,15 +703,6 @@ def orchestrator_agent_node(state: IntentState) -> IntentState:
         logger.info(f"Intent {intent_id}: Config with params '{state.current_config_parameters}' applied. "
                     f"Waiting {MIN_WAIT_FIRST_PM_CHECK_SECONDS}s for first PM check.")
         time.sleep(MIN_WAIT_FIRST_PM_CHECK_SECONDS)
-        calculated_ee_value = calculate_energy_efficiency(state.pm_data)
-
-        # debugging output
-        state.calculated_ee_metrics = {"RANEnergyEfficiency": calculated_ee_value if calculated_ee_value is not None else "N/A_CALCULATION_FAILED"}
-        logger.info(f"Intent {intent_id}: Calculated EE value: {calculated_ee_value}")
-        logger.info(f"Intent {intent_id}: AvgPower: {state.pm_data.get('PEE.AvgPower', 'N/A')}")
-        logger.info(f"Intent {intent_id}: TotPdcpPduVolumeUl: {state.pm_data.get('QosFlow.TotPdcpPduVolumeUl', 'N/A')}")
-        logger.info(f"Intent {intent_id}: TotPdcpPduVolumeDl: {state.pm_data.get('QosFlow.TotPdcpPduVolumeDl', 'N/A')}")
-        logger.info(f"Intent {intent_id}: Initial wait complete.")
 
     else:
         state.config_applied_successfully = False
