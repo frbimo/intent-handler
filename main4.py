@@ -516,27 +516,25 @@ The following is an example for the output JSON:
         # state.current_config_parameters holds the *last applied* parameters
         # state.pm_data and state.outcomes hold the results of *that last application*
         user_prompt_refine = f"""
-Refine configuration for intent {intent_id} using strategy type '{state.current_strategy_type}'.
-This is total configuration attempt number {state.total_refinement_attempts_for_intent} for this intent.
-Intent Targets: {json.dumps(state.intent["intent"]["intentExpectation"]["expectationTargets"])}
-PREVIOUSLY APPLIED Parameters for this strategy type: {json.dumps(state.current_config_parameters)}
-Observed PM Data AFTER applying previous parameters: {json.dumps(state.pm_data)}
-Observed Outcomes of previous parameters: {json.dumps(state.outcomes)}
-CELL_CAPABILITIES (for parameter ranges): {json.dumps(CELL_CAPABILITIES)}
-STRATEGY_DATABASE (for context): {json.dumps(STRATEGY_DATABASE)}
+Targets: {json.dumps(state.intent["intent"]["intentExpectation"]["expectationTargets"])}
+Previous Parameters: {json.dumps(state.current_config_parameters)}
+PM Data (post-application): {json.dumps(state.pm_data)}
+Outcomes: {json.dumps(state.outcomes)}
+Energy Efficiency Metrics: {json.dumps(state.calculated_ee_metrics)}
+Parameter Ranges (CELL_CAPABILITIES): {json.dumps(CELL_CAPABILITIES)}
+Strategy Reference (STRATEGY_DATABASE): {json.dumps(STRATEGY_DATABASE)}
 
-Instruction:
-Previous parameters {state.current_config_parameters} resulted in outcomes {state.outcomes}.
-1. Analyze why previous parameters failed/underperformed.
-2. Propose *new parameters* for strategy type '{state.current_strategy_type}' to better meet targets.
-   Parameters to be adjusted should be within the capabilities of the target cells.
-3. If this strategy type seems unrefinable (e.g., parameters at limits, no positive trend), set `give_up_on_this_strategy_type: true`.
-The following is an example for the output JSON: 
+Instructions:
+- Analyze why the previous parameters underperformed.
+- Propose new parameters (within CELL_CAPABILITIES) to improve target fulfillment.
+- If no further improvement is feasible, set `give_up_on_this_strategy_type: true`.
+
+Output format:
 ```json
 {{ "result": {{ "refined_parameters": {{...}}, "give_up_on_this_strategy_type": false/true }}, "explanation": "...", "error": null }}
 ```
 """
-        messages = [{"role": "system", "content": "AI for 5G. Refine config parameters. Output JSON."}, {"role": "user", "content": user_prompt_refine}]
+        messages = [{"role": "system", "content": "You are an AI optimizing 5G strategies based on observed performance. Generate response in JSON."}, {"role": "user", "content": user_prompt_refine}]
         response = call_llm(messages)
 
         if response.get("error") or not response.get("result"):
@@ -680,103 +678,112 @@ def orchestrator_agent_node(state: IntentState) -> IntentState:
         logger.info(f"Intent {intent_id}: Config with params '{state.current_config_parameters}' applied. "
                     f"Waiting {MIN_WAIT_FIRST_PM_CHECK_SECONDS}s for first PM check.")
         time.sleep(MIN_WAIT_FIRST_PM_CHECK_SECONDS)
+        calculated_ee_value = calculate_energy_efficiency(state.pm_data)
+
+        # debugging output
+        state.calculated_ee_metrics = {"RANEnergyEfficiency": calculated_ee_value if calculated_ee_value is not None else "N/A_CALCULATION_FAILED"}
+        logger.info(f"Intent {intent_id}: Calculated EE value: {calculated_ee_value}")
+        logger.info(f"Intent {intent_id}: AvgPower: {state.pm_data.get('PEE.AvgPower', 'N/A')}")
+        logger.info(f"Intent {intent_id}: TotPdcpPduVolumeUl: {state.pm_data.get('QosFlow.TotPdcpPduVolumeUl', 'N/A')}")
+        logger.info(f"Intent {intent_id}: TotPdcpPduVolumeDl: {state.pm_data.get('QosFlow.TotPdcpPduVolumeDl', 'N/A')}")
         logger.info(f"Intent {intent_id}: Initial wait complete.")
+
     else:
         state.config_applied_successfully = False
         state.pm_evaluation_pending = False # No point in monitoring if config failed
         state.fulfilmentStatus = "NOT_FULFILLED" # Set overall status
     return state
 
-def pm_evaluation_agent_node(state: IntentState) -> IntentState:
-    logger.info(f"Executing {inspect.currentframe().f_code.co_name}")
-    intent_id = state.intent.get("intent", {}).get("id", "UNKNOWN_INTENT_ID")
-    evaluated_outcomes = []
+# def pm_evaluation_agent_node(state: IntentState) -> IntentState:
+#     logger.info(f"Executing {inspect.currentframe().f_code.co_name}")
+#     intent_id = state.intent.get("intent", {}).get("id", "UNKNOWN_INTENT_ID")
+#     evaluated_outcomes = []
 
-    if not state.pm_data or state.pm_data.get("error"):
-        logger.error(f"PM Evaluator for {intent_id}: PM data error: {state.pm_data.get('error', 'Missing')}")
-        state.outcomes = [{"error": "PM data error for evaluation", "targetName": "PM_Evaluation", "fulfilmentStatus": "NOT_FULFILLED"}]
-        state.calculated_ee_metrics = None
-        return state
+#     if not state.pm_data or state.pm_data.get("error"):
+#         logger.error(f"PM Evaluator for {intent_id}: PM data error: {state.pm_data.get('error', 'Missing')}")
+#         state.outcomes = [{"error": "PM data error for evaluation", "targetName": "PM_Evaluation", "fulfilmentStatus": "NOT_FULFILLED"}]
+#         state.calculated_ee_metrics = None
+#         return state
 
-    intent_targets = state.intent.get("intent", {}).get("intentExpectation", {}).get("expectationTargets", [])
-    enriched_pm_data_for_llm = {**state.pm_data} # Start with a copy
+#     intent_targets = state.intent.get("intent", {}).get("intentExpectation", {}).get("expectationTargets", [])
+#     enriched_pm_data_for_llm = {**state.pm_data} # Start with a copy
 
-    # Calculate and add EE to the enriched PM data if it's a target or for LLM context
-    calculated_ee_value = calculate_energy_efficiency(state.pm_data)
+#     # Calculate and add EE to the enriched PM data if it's a target or for LLM context
+#     calculated_ee_value = calculate_energy_efficiency(state.pm_data)
 
-    # debugging output
-    logger.info(f"Intent {intent_id}: Calculated EE value: {calculated_ee_value}")
-    logger.info(f"Intent {intent_id}: AvgPower: {state.pm_data.get('PEE.AvgPower', 'N/A')}")
-    logger.info(f"Intent {intent_id}: TotPdcpPduVolumeUl: {state.pm_data.get('QosFlow.TotPdcpPduVolumeUl', 'N/A')}")
-    logger.info(f"Intent {intent_id}: TotPdcpPduVolumeDl: {state.pm_data.get('QosFlow.TotPdcpPduVolumeDl', 'N/A')}")
+#     # debugging output
+#     logger.info(f"Intent {intent_id}: Calculated EE value: {calculated_ee_value}")
+#     logger.info(f"Intent {intent_id}: AvgPower: {state.pm_data.get('PEE.AvgPower', 'N/A')}")
+#     logger.info(f"Intent {intent_id}: TotPdcpPduVolumeUl: {state.pm_data.get('QosFlow.TotPdcpPduVolumeUl', 'N/A')}")
+#     logger.info(f"Intent {intent_id}: TotPdcpPduVolumeDl: {state.pm_data.get('QosFlow.TotPdcpPduVolumeDl', 'N/A')}")
 
-    state.calculated_ee_metrics = {"RANEnergyEfficiencyLive": calculated_ee_value if calculated_ee_value is not None else "N/A_CALCULATION_FAILED"}
-    if calculated_ee_value is not None:
-        enriched_pm_data_for_llm["calculatedRANEnergyEfficiency"] = calculated_ee_value
-        logger.info(f"Intent {intent_id}: Calculated EE = {calculated_ee_value}. Added to PM snapshot for LLM.")
-    else:
-        logger.warning(f"Intent {intent_id}: Failed to calculate EE for PM evaluation.")
+#     state.calculated_ee_metrics = {"RANEnergyEfficiencyLive": calculated_ee_value if calculated_ee_value is not None else "N/A_CALCULATION_FAILED"}
+#     if calculated_ee_value is not None:
+#         enriched_pm_data_for_llm["calculatedRANEnergyEfficiency"] = calculated_ee_value
+#         logger.info(f"Intent {intent_id}: Calculated EE = {calculated_ee_value}. Added to PM snapshot for LLM.")
+#     else:
+#         logger.warning(f"Intent {intent_id}: Failed to calculate EE for PM evaluation.")
 
-    # Explicitly evaluate RANEnergyEfficiency if it's a target
-    for target in intent_targets:
-        target_name = target.get("targetName")
-        if target_name == "RANEnergyEfficiency": # Assuming this is the name used in intents for EE
-            target_value_str = target.get("targetValue")
-            target_condition = target.get("targetCondition")
-            achieved_ee = calculated_ee_value
-            is_ee_fulfilled = False
-            ee_eval_details = "EE target evaluation. "
+#     # Explicitly evaluate RANEnergyEfficiency if it's a target
+#     for target in intent_targets:
+#         target_name = target.get("targetName")
+#         if target_name == "RANEnergyEfficiency": # Assuming this is the name used in intents for EE
+#             target_value_str = target.get("targetValue")
+#             target_condition = target.get("targetCondition")
+#             achieved_ee = calculated_ee_value
+#             is_ee_fulfilled = False
+#             ee_eval_details = "EE target evaluation. "
 
-            if achieved_ee is not None:
-                ee_eval_details += f"Calculated EE = {achieved_ee:.4f}. "
-                try:
-                    target_ee_float = float(target_value_str)
-                    if target_condition == ConditionEnum.IS_GREATER_THAN: is_ee_fulfilled = achieved_ee > target_ee_float
-                    elif target_condition == ConditionEnum.IS_EQUAL_TO_OR_GREATER_THAN: is_ee_fulfilled = achieved_ee >= target_ee_float
-                    # Add other relevant conditions for EE
-                    else: ee_eval_details += f"Unsupported condition '{target_condition}' for EE. "
-                    ee_eval_details += f"Met target ({target_condition} {target_ee_float})? {is_ee_fulfilled}."
-                except ValueError:
-                    ee_eval_details += f"Target value '{target_value_str}' not a float. "
-            else:
-                ee_eval_details += "Could not calculate EE. "
+#             if achieved_ee is not None:
+#                 ee_eval_details += f"Calculated EE = {achieved_ee:.4f}. "
+#                 try:
+#                     target_ee_float = float(target_value_str)
+#                     if target_condition == ConditionEnum.IS_GREATER_THAN: is_ee_fulfilled = achieved_ee > target_ee_float
+#                     elif target_condition == ConditionEnum.IS_EQUAL_TO_OR_GREATER_THAN: is_ee_fulfilled = achieved_ee >= target_ee_float
+#                     # Add other relevant conditions for EE
+#                     else: ee_eval_details += f"Unsupported condition '{target_condition}' for EE. "
+#                     ee_eval_details += f"Met target ({target_condition} {target_ee_float})? {is_ee_fulfilled}."
+#                 except ValueError:
+#                     ee_eval_details += f"Target value '{target_value_str}' not a float. "
+#             else:
+#                 ee_eval_details += "Could not calculate EE. "
             
-            evaluated_outcomes.append({
-                "targetName": target_name,
-                "targetAchievedValue": round(achieved_ee, 4) if isinstance(achieved_ee, float) else achieved_ee,
-                "targetValue": target_value_str, "targetCondition": target_condition,
-                "fulfilmentStatus": "FULFILLED" if is_ee_fulfilled else "NOT_FULFILLED",
-                "evaluation_details": ee_eval_details
-            })
-            break # Assuming only one RANEnergyEfficiency target
+#             evaluated_outcomes.append({
+#                 "targetName": target_name,
+#                 "targetAchievedValue": round(achieved_ee, 4) if isinstance(achieved_ee, float) else achieved_ee,
+#                 "targetValue": target_value_str, "targetCondition": target_condition,
+#                 "fulfilmentStatus": "FULFILLED" if is_ee_fulfilled else "NOT_FULFILLED",
+#                 "evaluation_details": ee_eval_details
+#             })
+#             break # Assuming only one RANEnergyEfficiency target
 
-    # LLM for other targets or overall summary
-    remaining_targets_for_llm = [t for t in intent_targets if t.get("targetName") != "RANEnergyEfficiency"]
-    if remaining_targets_for_llm:
-        user_prompt = f"""
-Analyze PM data (enriched with `calculatedRANEnergyEfficiency` if available) for the *remaining* intent targets.
-Intent ID: {intent_id}
-Remaining Intent Targets: {json.dumps(remaining_targets_for_llm)}
-Current PM Data Snapshot (may include calculated EE for context): {json.dumps(enriched_pm_data_for_llm, indent=2)}
-Instructions: For each target in "Remaining Intent Targets", provide evaluation. Prioritize `calculatedRANEnergyEfficiency` if relevant.
-Output JSON with "outcomes_llm": [{{targetName, targetAchievedValue, fulfilmentStatus, evaluation_details,...}}]
-"""
-        messages = [{"role": "system", "content": "5G Analyst for PM data. Output JSON."}, {"role": "user", "content": user_prompt}]
-        response = call_llm(messages)
-        if response.get("error") or "outcomes_llm" not in response:
-            logger.error(f"PM Evaluator LLM error for remaining targets in {intent_id}: {response.get('error', 'No outcomes_llm')}")
-            for rem_target in remaining_targets_for_llm:
-                 evaluated_outcomes.append({"error": "LLM failed for this target", "targetName": rem_target.get("targetName"), "fulfilmentStatus": "NOT_FULFILLED"})
-        else:
-            evaluated_outcomes.extend(response["outcomes_llm"])
+#     # LLM for other targets or overall summary
+#     remaining_targets_for_llm = [t for t in intent_targets if t.get("targetName") != "RANEnergyEfficiency"]
+#     if remaining_targets_for_llm:
+#         user_prompt = f"""
+# Analyze PM data (enriched with `calculatedRANEnergyEfficiency` if available) for the *remaining* intent targets.
+# Intent ID: {intent_id}
+# Remaining Intent Targets: {json.dumps(remaining_targets_for_llm)}
+# Current PM Data Snapshot (may include calculated EE for context): {json.dumps(enriched_pm_data_for_llm, indent=2)}
+# Instructions: For each target in "Remaining Intent Targets", provide evaluation. Prioritize `calculatedRANEnergyEfficiency` if relevant.
+# Output JSON with "outcomes_llm": [{{targetName, targetAchievedValue, fulfilmentStatus, evaluation_details,...}}]
+# """
+#         messages = [{"role": "system", "content": "5G Analyst for PM data. Output JSON."}, {"role": "user", "content": user_prompt}]
+#         response = call_llm(messages)
+#         if response.get("error") or "outcomes_llm" not in response:
+#             logger.error(f"PM Evaluator LLM error for remaining targets in {intent_id}: {response.get('error', 'No outcomes_llm')}")
+#             for rem_target in remaining_targets_for_llm:
+#                  evaluated_outcomes.append({"error": "LLM failed for this target", "targetName": rem_target.get("targetName"), "fulfilmentStatus": "NOT_FULFILLED"})
+#         else:
+#             evaluated_outcomes.extend(response["outcomes_llm"])
     
-    if not evaluated_outcomes and intent_targets:
-         logger.warning(f"PM Evaluator for {intent_id}: No targets evaluated.")
-         evaluated_outcomes.append({"error": "No targets processed.", "targetName": "PM_Evaluation", "fulfilmentStatus": "NOT_FULFILLED"})
+#     if not evaluated_outcomes and intent_targets:
+#          logger.warning(f"PM Evaluator for {intent_id}: No targets evaluated.")
+#          evaluated_outcomes.append({"error": "No targets processed.", "targetName": "PM_Evaluation", "fulfilmentStatus": "NOT_FULFILLED"})
 
-    state.outcomes = evaluated_outcomes
-    logger.info(f"PM Evaluation for {intent_id} complete. Final Outcomes: {json.dumps(state.outcomes, indent=2)}")
-    return state
+#     state.outcomes = evaluated_outcomes
+#     logger.info(f"PM Evaluation for {intent_id} complete. Final Outcomes: {json.dumps(state.outcomes, indent=2)}")
+#     return state
 
 
 def route_main_agent(state: IntentState) -> str:
@@ -952,19 +959,17 @@ def build_graph():
     graph.add_node("data_agent", data_agent_node)
     graph.add_node("history_agent", history_agent)
     graph.add_node("orchestrator_agent", orchestrator_agent_node)
-    graph.add_node("pm_evaluation_agent_node", pm_evaluation_agent_node)
+    # graph.add_node("pm_evaluation_agent_node", pm_evaluation_agent_node)
     graph.set_entry_point("strategy_agent")
     graph.add_conditional_edges("strategy_agent", route_main_agent, {
         "data_agent": "data_agent", 
         "history_agent": "history_agent",
         "orchestrator_agent": "orchestrator_agent", 
-        "pm_evaluation_agent_node": "pm_evaluation_agent_node",
         "strategy_agent": "strategy_agent", END: END,
     })
     fixed_edges = [("data_agent", "strategy_agent"), 
                    ("history_agent", "strategy_agent"),
-                   ("orchestrator_agent", "strategy_agent"), 
-                   ("pm_evaluation_agent_node", "strategy_agent")]
+                   ("orchestrator_agent", "strategy_agent")]
     for src, dest in fixed_edges: graph.add_edge(src, dest)
     return graph.compile()
 
