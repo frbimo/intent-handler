@@ -442,12 +442,26 @@ Instruction:
 - Select ONE `strategyType` from STRATEGY_DATABASE that seems most appropriate.
 - Propose initial `parameters` for this strategyType, considering PM data and CELL_CAPABILITIES. Parameters to be adjusted should be within the capabilities of the target cells.
 - This will be the ONLY strategy type used and refined for this intent. Choose wisely.
-The following is an example for the output JSON: 
+output format: 
 ```json
 {{ "result": {{ "chosen_strategy_type": "...", "initial_parameters": {{...}} }}, "explanation": "...", "error": null }}
 ```
+
+example output:
+```json
+{{
+  "result": {{
+    "chosen_strategy_type": "PowerOptimization",
+    "initial_parameters": {{
+      "configuredMaxTxPower": 16
+    }}
+  }},
+  "explanation": "...",
+  "error": null
+}}
+```
 """
-        messages = [{"role": "system", "content": "AI for 5G. Propose an initial strategy. Output JSON."}, {"role": "user", "content": user_prompt_initial}]
+        messages = [{"role": "system", "content": "You are an AI proposing an initial 5G configuration strategy. Output JSON."}, {"role": "user", "content": user_prompt_initial}]
         response = call_llm(messages)
 
         if response.get("error") or not response.get("result") or \
