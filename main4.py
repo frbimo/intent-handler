@@ -91,7 +91,9 @@ class IntentState(BaseModel):
 CELL_CAPABILITIES = {
     "1": {"configurableParameters": {"parameters": {"ChannelBandwidthUL": {}, "ChannelBandwidthDL": {}}}},
     "2": {"configurableParameters": {"parameters": {"configuredMaxTxPower": {}}}},
-    "3": {"configurableParameters": {"parameters": {"configuredMaxTxPower": {}}}}
+    "3": {"configurableParameters": {"parameters": {"configuredMaxTxPower": {}}}},
+    "7": {"configurableParameters": {"parameters": {"configuredMaxTxPower": {}}}}
+
 }
 STRATEGY_DATABASE = {
     "PowerOptimization": {"configType": "EnergySavingConfig"},
@@ -292,21 +294,22 @@ def call_llm(messages: List[Dict]) -> Dict:
         return {"error": f"LLM API call failed: {str(e)}"}
 
 def calculate_energy_efficiency(pm_data: Dict) -> Optional[float]:
-    pdcp_ul_key = "QosFlow.TotPdcpPduVolumeUl"
-    pdcp_dl_key = "QosFlow.TotPdcpPduVolumeDl"
-    power_key = "PEE.AvgPower"
+    pdcp_ul_key = "QosFlow.TotPdcpPduVolumeUl" #Mbits 3000000
+    pdcp_dl_key = "QosFlow.TotPdcpPduVolumeDl" #Mbits 400000
+    # power_key = "PEE.AvgPower"
+    power_key = "PEE.Energy" # kWh 0.02 
 
     if pdcp_ul_key in pm_data and pdcp_dl_key in pm_data and power_key in pm_data:
         try:
-            total_pdcp_volume = float(pm_data[pdcp_ul_key]) + float(pm_data[pdcp_dl_key])
+            total_pdcp_volume_kbit = (float(pm_data[pdcp_ul_key]) + float(pm_data[pdcp_dl_key]))*1000 # Convert Mbits to kbits
             total_power = float(pm_data[power_key])
             if total_power > 0:
-                ee = total_pdcp_volume / total_power
-                logger.info(f"Calculated EE: {total_pdcp_volume} / {total_power} = {ee}")
+                ee = total_pdcp_volume_kbit / total_power
+                logger.info(f"Calculated EE: {total_pdcp_volume_kbit} / {total_power} = {ee}")
                 return ee
             else:
                 logger.warning("Cannot calculate EE: Total power consumption is zero or not positive.")
-                return 0.0 if total_pdcp_volume == 0 else None # Or a marker for very high EE
+                return 0.0 if total_pdcp_volume_kbit == 0 else None # Or a marker for very high EE
         except ValueError:
             logger.error(f"Could not convert PM data for EE calculation to float.")
             return None
