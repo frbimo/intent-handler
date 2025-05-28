@@ -1,5 +1,7 @@
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any, Optional, Literal
 from langgraph.graph import StateGraph, END
+from langchain_core.runnables.config import RunnableConfig
+
 from pydantic import BaseModel
 import json
 from datetime import datetime, timezone, timedelta # Ensure timezone aware datetimes
@@ -27,8 +29,13 @@ MIN_WAIT_FIRST_PM_CHECK_SECONDS = 65
 PM_CHECK_INTERVAL_SECONDS = 60
 OBSERVATION_PERIOD_SECONDS = 125
 MAX_PM_CHECK_CYCLES_PER_STRATEGY = 10
-MAX_TOTAL_REFINEMENT_ATTEMPTS_FOR_INTENT = 7
+MAX_TOTAL_REFINEMENT_ATTEMPTS_FOR_INTENT = 30
 
+# COLOR CODE For Print
+RESET = '\033[0m'
+CYAN= '\033[36m' 
+RED = '\033[31m'
+GREEN = '\033[32m'
 # Condition and fulfillment enums
 class ConditionEnum(str, Enum):
     IS_EQUAL_TO = "IS_EQUAL_TO"
@@ -53,6 +60,18 @@ class NotFulfilledStateEnum(str, Enum):
     SUSPENDED = "SUSPENDED"
     TERMINATED = "TERMINATED"
     FULFILMENTFAILED = "FULFILMENTFAILED"
+
+# class PMData(BaseModel):
+#     """
+#     Represents the PM data structure expected from the PM Data API.
+#     This is a simplified version; adjust fields as per your actual PM data structure.
+#     """
+#     DRBUEThpDl_Mbps: Optional[float] = None
+#     DRBUEThpUl_Mbps: Optional[float] = None
+#     TotPdcpPduVolumeUl: Optional[float] = None
+#     TotPdcpPduVolumeDl: Optional[float] = None
+#     PEEAvgPower_: Optional[float] = None # Average Power Consumption in Watts
+#     # Add other fields as necessary based on your PM data structure
 
 class IntentState(BaseModel):
     initialized: bool = False # Indicates if the state has been initialized
@@ -82,7 +101,7 @@ class IntentState(BaseModel):
     applied_strategy_id: str = "NONE"
     # --- Calculated Metrics & Deadline ---
     calculated_ee_metrics: Optional[Dict[str, Any]] = None
-    intent_processing_deadline: Optional[datetime] = None
+    observation_deadline: Optional[datetime] = None
 
     class Config:
         arbitrary_types_allowed = True
@@ -294,33 +313,63 @@ def call_llm(messages: List[Dict]) -> Dict:
         return {"error": f"LLM API call failed: {str(e)}"}
 
 def calculate_energy_efficiency(pm_data: Dict) -> Optional[float]:
-    pdcp_ul_key = "QosFlow.TotPdcpPduVolumeUl" #Mbits 3000000
-    pdcp_dl_key = "QosFlow.TotPdcpPduVolumeDl" #Mbits 400000
-    # power_key = "PEE.AvgPower"
-    power_key = "PEE.Energy" # kWh 0.02 
+    # pdcp_ul_key = "QosFlow.TotPdcpPduVolumeUl" #Mbits 
+    # pdcp_dl_key = "QosFlow.TotPdcpPduVolumeDl" #Mbits 
+    power_key = "PEE.AvgPower" # Watt 
+    # power_key = "PEE.Energy" # kWh
+    ue_thp_ul_key = "DRB.UEThpUl" # bps
+    ue_thp_dl_key = "DRB.UEThpDl" # bps
 
-    if pdcp_ul_key in pm_data and pdcp_dl_key in pm_data and power_key in pm_data:
+    logger.info(f"{GREEN}Calculating Energy Efficiency from PM data{RESET}")
+
+    # # --- 3GPP uses PDCPU SDU --- #
+    # if pdcp_ul_key in pm_data and pdcp_dl_key in pm_data and power_key in pm_data:
+    #     try:
+    #         total_pdcp_volume_kbit = (float(pm_data[pdcp_ul_key]) + float(pm_data[pdcp_dl_key]))
+    #         # total_power_kWh = float(pm_data[power_key]) / 1000 # Convert Watts to kW (1 kW = 1000 W)
+    #         total_power_kWh = float(pm_data[power_key]) # Convert Watts to kW (1 kW = 1000 W)
+    #         logger.info(f"{GREEN}Total PDCP Volume (UL: {float(pm_data[pdcp_ul_key])} + DL: {float(pm_data[pdcp_dl_key])}): {total_pdcp_volume_kbit} kbit, Total Power Consumption: {total_power_kWh} kWh{RESET}")
+    #         if total_power_kWh > 0:
+    #             ee = total_pdcp_volume_kbit / total_power_kWh
+    #             logger.info(f"Calculated EE: {total_pdcp_volume_kbit} / {total_power_kWh} = {ee}")
+    #             return ee
+    #         else:
+    #             logger.warning("Cannot calculate EE: Total power consumption is zero or not positive.")
+    #             return 0.0 if total_pdcp_volume_kbit == 0 else None # Or a marker for very high EE
+    #     except ValueError:
+    #         logger.error(f"Could not convert PM data for EE calculation to float.")
+    #         return None
+    # else:
+    #     missing = [k for k in [pdcp_ul_key, pdcp_dl_key, power_key] if k not in pm_data]
+    #     logger.warning(f"Cannot calculate EE: Missing PM data keys: {', '.join(missing)}")
+    #     return None
+
+    # --- IEEE uses Throughput --- #
+    if ue_thp_ul_key in pm_data and ue_thp_dl_key in pm_data and power_key in pm_data:
         try:
-            total_pdcp_volume_kbit = (float(pm_data[pdcp_ul_key]) + float(pm_data[pdcp_dl_key]))*1000 # Convert Mbits to kbits
-            total_power = float(pm_data[power_key])
-            if total_power > 0:
-                ee = total_pdcp_volume_kbit / total_power
-                logger.info(f"Calculated EE: {total_pdcp_volume_kbit} / {total_power} = {ee}")
+            total_throughput_bits = (float(pm_data[ue_thp_ul_key]) + float(pm_data[ue_thp_dl_key]))
+            # total_power_kWh = float(pm_data[power_key]) / 1000 # Convert Watts to kW (1 kW = 1000 W)
+            total_power_kWh = float(pm_data[power_key]) # Convert Watts to kW (1 kW = 1000 W)
+            logger.info(f"{GREEN}Total Throughput Volume (UL: {float(pm_data[ue_thp_ul_key])} + DL: {float(pm_data[ue_thp_dl_key])}): {total_throughput_bits} kbit, Total Power Consumption: {total_power_kWh} kWh{RESET}")
+            if total_power_kWh > 0:
+                ee = total_throughput_bits / total_power_kWh
+                logger.info(f"Calculated EE: {total_throughput_bits} / {total_power_kWh} = {ee}")
                 return ee
             else:
                 logger.warning("Cannot calculate EE: Total power consumption is zero or not positive.")
-                return 0.0 if total_pdcp_volume_kbit == 0 else None # Or a marker for very high EE
+                return 0.0 if total_throughput_bits == 0 else None # Or a marker for very high EE
         except ValueError:
             logger.error(f"Could not convert PM data for EE calculation to float.")
             return None
     else:
-        missing = [k for k in [pdcp_ul_key, pdcp_dl_key, power_key] if k not in pm_data]
+        missing = [k for k in [ue_thp_ul_key, ue_thp_dl_key, power_key] if k not in pm_data]
         logger.warning(f"Cannot calculate EE: Missing PM data keys: {', '.join(missing)}")
         return None
 
 # --- Agent Nodes ---
 def history_agent(state: IntentState) -> IntentState:
-    logger.info(f"Executing {inspect.currentframe().f_code.co_name}")
+    logger.info(f"{CYAN}Executing {inspect.currentframe().f_code.co_name}{RESET}")
+
     intent = state.intent
     current_intent_id = intent.get("intent", {}).get("id", "UNKNOWN_INTENT_ID")
     expectation_targets = intent.get("intent", {}).get("intentExpectation", {}).get("expectationTargets", [])
@@ -388,14 +437,65 @@ Output JSON with:
                                "explanation": "LLM processing failed.", "error": response.get('error', 'Unknown')}
     return state
 
+def filter_and_rename_metrics_for_json(pm_metrics: dict) -> dict:
+    """
+    Renames specified metric keys and converts numeric string values to actual numbers.
+    Only includes the metrics defined in the 'keys_to_rename_map', effectively
+    removing all other keys from the original dictionary.
+
+    Args:
+        pm_metrics (dict): The dictionary containing raw PM data.
+
+    Returns:
+        dict: A new dictionary containing only the specified keys (renamed)
+              and their numeric values (if converted), ready for JSON dumping.
+    """
+    # This dictionary defines the exact keys you want to keep and their new names
+    keys_to_rename_map = {
+        "DRB.UEThpDl": "DRB.UEThpDl_bps",
+        "DRB.UEThpUl": "DRB.UEThpUl_bps",
+        # "QosFlow.TotPdcpPduVolumeUl": "QosFlow.TotPdcpPduVolumeUl_Mbits",
+        # "QosFlow.TotPdcpPduVolumeDl": "QosFlow.TotPdcpPduVolumeDl_Mbits",
+        # "PEE.Energy": "PEE.Energy_kWh"
+        "PEE.AvgPower": "PEE.AvgPower_Watts", # Assuming this is the average power consumption in Watts
+
+    }
+
+    filtered_and_renamed_metrics = {}
+
+    # Iterate through the 'keys_to_rename_map' to ensure we only process desired keys
+    for original_key_in_map, new_key_name in keys_to_rename_map.items():
+        if original_key_in_map in pm_metrics:
+            # If the original key exists in the raw pm_metrics, process its value
+            value = pm_metrics[original_key_in_map]
+            
+            processed_value = value
+            # Attempt to convert string values to int or float for better JSON representation
+            if isinstance(value, str):
+                try:
+                    processed_value = int(value)
+                except ValueError:
+                    try:
+                        processed_value = float(value)
+                    except ValueError:
+                        # Value is a string but not a number, keep as string
+                        pass
+            
+            # Add the item to the new dictionary with the new key name
+            filtered_and_renamed_metrics[new_key_name] = processed_value
+        else:
+            # Log a warning if a key you expected to rename wasn't found in the input data
+            logger.warning(f"Metric '{original_key_in_map}' (to be renamed to '{new_key_name}') not found in the input PM data. Skipping.")
+            
+    return filtered_and_renamed_metrics
+
 def strategy_agent(state: IntentState) -> IntentState:
-    logger.info(f"Executing strategy_agent. CurrentStrategyType='{state.current_strategy_type}', "
+    logger.info(f"{CYAN}Executing {inspect.currentframe().f_code.co_name}{RESET}")
+    logger.info(f"CurrentStrategyType='{state.current_strategy_type}', "
                 f"TotalRefinementAttemptsSoFar={state.total_refinement_attempts_for_intent}")
     
-   
     intent = state.intent
     intent_id = intent.get("intent", {}).get("id", "UNKNOWN_INTENT_ID")
-    
     
      # mark intent initialized
     if not state.initialized:
@@ -428,16 +528,18 @@ def strategy_agent(state: IntentState) -> IntentState:
         
         # Obtain runtime configuration parameters
         for cell_id_str in object_target:
-            netconf_client = NETCONFCLIENT(cell_id_str, cell_id_str)
+            netconf_client = NETCONFCLIENT(1, cell_id_str)
             state.current_config_parameters={"configuredMaxTxPower": netconf_client.get_current_tx_power()} 
 
+        logger.info(f"Obtained runtime Energy Efficiency Metrics {intent_id}: {json.dumps(state.calculated_ee_metrics)}")
         user_prompt_initial = f"""
 Propose an INITIAL strategy type and configuration parameters for intent {intent_id}.
 Intent Targets: {json.dumps(targets)}
 Object Target: {object_target}
+Current Energy Efficiency Metrics in bit_per_joule: {json.dumps(state.calculated_ee_metrics)}
 Obtained runtime configuration parameters: {json.dumps(state.current_config_parameters)}
 Historical Insights: {json.dumps(history_insights, indent=2)}
-Current PM Data: {json.dumps(state.pm_data)}
+Current PM Data: {json.dumps(filter_and_rename_metrics_for_json(state.pm_data))}
 STRATEGY_DATABASE: {json.dumps(STRATEGY_DATABASE)}
 CELL_CAPABILITIES: {json.dumps(CELL_CAPABILITIES)}
 
@@ -480,7 +582,8 @@ example output:
         explanation = response.get("explanation", "N/A")
         logger.info(f"LLM Initial Strategy Explanation for {intent_id}: {explanation}")
 
-        user_input = input(f"LLM proposed initial strategy type: '{chosen_strategy_type}' with params {initial_parameters}. Use this type for all refinements? ('yes' to confirm): ")
+        # user_input = input(f"LLM proposed initial strategy type: '{chosen_strategy_type}' with params {initial_parameters}. Use this type for all refinements? ('yes' to confirm): ")
+        user_input = "yes" # For testing, assume user always approves the initial strategy type
         if user_input.lower() == "yes":
             state.current_strategy_type = chosen_strategy_type
             state.current_config_parameters = initial_parameters
@@ -511,10 +614,16 @@ example output:
             state.fulfilmentStatus = "ACKNOWLEDGED"
             logger.info(f"Initial strategy '{chosen_strategy_type}' for {intent_id} approved.")
         else:
-            logger.info(f"User rejected initial strategy proposal for {intent_id}.")
-            state.fulfilmentStatus = "NOT_FULFILLED" # User terminated
-            state.total_refinement_attempts_for_intent -=1 # Revert
-            state.report = {"intentId": intent_id, "expectationFulfilmentResult": [{"targetStatus": "NOT_FULFILLED", "failureAnalysis": {"notFulfilledState": "TERMINATED", "reason": "User rejected initial strategy proposal"}}]}
+            # --- IMPORTANT CHANGE FOR INITIAL REJECTION ---
+            logger.info(f"User rejected initial strategy proposal for {intent_id}. Re-evaluating.")
+            # DO NOT set fulfilmentStatus to NOT_FULFILLED here.
+            # Instead, clear the proposed strategy and ensure pm_evaluation_pending is False
+            # The router will then re-check the RAN state.
+            state.current_strategy_type = None # Clear this so it can be proposed again (or fail if attempts exhausted)
+            state.current_config_parameters = {} # Clear any temp proposed params
+            state.pm_evaluation_pending = False # Not pending application of a strategy
+            # Do not decrement total_refinement_attempts_for_intent, as this was a valid attempt.
+            # Router will take over and lead to data_agent or eventually terminate if MAX_TOTAL_REFINEMENT_ATTEMPTS_FOR_INTENT is met.
         return state
 
     # --- Phase 2: REFINE Parameters for the EXISTING Strategy Type ---
@@ -523,21 +632,22 @@ example output:
                     f"Next total refinement attempt for intent: {state.total_refinement_attempts_for_intent + 1}.")
 
         if state.total_refinement_attempts_for_intent >= MAX_TOTAL_REFINEMENT_ATTEMPTS_FOR_INTENT:
-            logger.warning(f"Max total refinement attempts ({MAX_TOTAL_REFINEMENT_ATTEMPTS_FOR_INTENT}) reached for intent {intent_id} while trying to refine '{state.current_strategy_type}'.")
-            state.fulfilmentStatus = "NOT_FULFILLED"
+            logger.warning(f"Max total refinement attempts ({MAX_TOTAL_REFINEMENT_ATTEMPTS_FOR_INTENT}) reached for intent {intent_id} while trying to refine '{state.current_strategy_type}'. Giving up.")
+            state.fulfilmentStatus = "NOT_FULFILLED" # Max attempts reached, definitive termination
             state.report = {"intentId": intent_id, "expectationFulfilmentResult": [{"targetStatus": "NOT_FULFILLED", "failureAnalysis": {"reason": f"Max total refinement attempts reached for strategy type '{state.current_strategy_type}'."}}]}
-            return state # Router will handle final storage and END
+            return state
 
-        state.total_refinement_attempts_for_intent += 1
+        state.total_refinement_attempts_for_intent += 1 # Count this refinement attempt
+
 
         # state.current_config_parameters holds the *last applied* parameters
         # state.pm_data and state.outcomes hold the results of *that last application*
         user_prompt_refine = f"""
 Targets: {json.dumps(state.intent["intent"]["intentExpectation"]["expectationTargets"])}
 Previous Parameters: {json.dumps(state.current_config_parameters)}
-PM Data (post-application): {json.dumps(state.pm_data)}
+PM Data (post-application): {json.dumps(filter_and_rename_metrics_for_json(state.pm_data))}
 Outcomes: {json.dumps(state.outcomes)}
-Energy Efficiency Metrics: {json.dumps(state.calculated_ee_metrics)}
+Current Energy Efficiency Metrics in bit_per_joule: {json.dumps(state.calculated_ee_metrics)}
 Parameter Ranges (CELL_CAPABILITIES): {json.dumps(CELL_CAPABILITIES)}
 Strategy Reference (STRATEGY_DATABASE): {json.dumps(STRATEGY_DATABASE)}
 
@@ -556,27 +666,34 @@ Output format:
 
         if response.get("error") or not response.get("result"):
             logger.error(f"StrategyAgent (Refine) LLM error for {intent_id}: {response.get('error', 'No result')}")
-            state.fulfilmentStatus = "NOT_FULFILLED" # Refinement step failed
-            state.total_refinement_attempts_for_intent -=1 # Revert count
-            state.pm_evaluation_pending = False
+            # LLM failed to refine, so this attempt is flawed. Mark as NOT_FULFILLED.
+            state.fulfilmentStatus = "NOT_FULFILLED"
             state.report = {"intentId": intent_id, "expectationFulfilmentResult": [{"targetStatus": "NOT_FULFILLED", "failureAnalysis": {"reason": f"LLM failed to refine strategy '{state.current_strategy_type}'"}}]}
+            state.pm_evaluation_pending = False # Not pending any application
             return state
 
         explanation = response.get("explanation", "N/A")
         logger.info(f"LLM Refinement Explanation for {intent_id}: {explanation}")
-        
+
         refined_parameters = response["result"].get("refined_parameters")
         give_up = response["result"].get("give_up_on_this_strategy_type", False)
 
         if give_up or not refined_parameters:
-            logger.info(f"LLM indicated to give up on '{state.current_strategy_type}' or no refinement for {intent_id}.")
-            state.fulfilmentStatus = "NOT_FULFILLED" # This strategy type is exhausted for this intent
-            state.report = {"intentId": intent_id, "expectationFulfilmentResult": [{"targetStatus": "NOT_FULFILLED", "failureAnalysis": {"reason": f"LLM gave up on/failed to refine '{state.current_strategy_type}' after {state.total_refinement_attempts_for_intent} total attempts."}}]}
-            state.current_strategy_type = None # Mark as exhausted
-            state.pm_evaluation_pending = False
-            return state
+            logger.info(f"LLM indicated to give up on '{state.current_strategy_type}' or no refinement for {intent_id}. Re-evaluating.")
+            # --- IMPORTANT CHANGE FOR LLM GIVE UP ---
+            # DO NOT set fulfilmentStatus to NOT_FULFILLED here.
+            # Allow the router to re-evaluate the current RAN state.
+            state.pm_evaluation_pending = False # Not pending application of a new refined strategy
+            # Current_strategy_type remains, but this 'give up' counts as an attempt.
+            # The router's max_attempts check will handle final termination.
+            # state.outcomes might still be populated from the *last* PM evaluation
+            # The router will pick it up and go to data_agent if targets not met.
+            # Clear outcomes if you want a fresh PM evaluation cycle.
+            state.outcomes = []
+            return state # Return state, let router decide
 
-        user_input = input(f"LLM proposed refined params {refined_parameters} for '{state.current_strategy_type}' (Total Attempt {state.total_refinement_attempts_for_intent}). Apply? ('yes' to confirm): ")
+        # user_input = input(f"LLM proposed refined params {refined_parameters} for '{state.current_strategy_type}' (Total Attempt {state.total_refinement_attempts_for_intent}). Apply? ('yes' to confirm): ")
+        user_input = "yes" # For testing, assume user always approves the refined parameters
         if user_input.lower() == "yes":
             state.current_config_parameters = refined_parameters # Update with new params to be applied
             
@@ -612,10 +729,15 @@ Output format:
             state.outcomes = [] # Clear outcomes from previous config's observation
             logger.info(f"Refined parameters for '{state.current_strategy_type}' approved for {intent_id}.")
         else:
-            logger.info(f"User rejected refined parameters for {intent_id}.")
-            state.fulfilmentStatus = "NOT_FULFILLED" # User terminated this refinement path for the intent
-            state.report = {"intentId": intent_id, "expectationFulfilmentResult": [{"targetStatus": "NOT_FULFILLED", "failureAnalysis": {"notFulfilledState": "TERMINATED", "reason": f"User rejected refined parameters for '{state.current_strategy_type}'"}}]}
-            state.pm_evaluation_pending = False
+            # --- IMPORTANT CHANGE FOR REFINED REJECTION ---
+            logger.info(f"User rejected refined parameters for {intent_id}. Re-evaluating.")
+            # DO NOT set fulfilmentStatus to NOT_FULFILLED here.
+            # Allow the router to re-evaluate the current RAN state.
+            state.pm_evaluation_pending = False # Not pending application of a new refined strategy
+            # Current_strategy_type remains, as we are still working on this type.
+            # The router will pick it up and go to data_agent if targets not met.
+            # Clear outcomes if you want a fresh PM evaluation cycle.
+            state.outcomes = [] # Clear outcomes from previous config's observation
         return state
     
     logger.error(f"StrategyAgent for {intent_id}: Invalid state (e.g. current_strategy_type not None or string).")
@@ -624,7 +746,7 @@ Output format:
 
 
 def data_agent_node(state: IntentState) -> IntentState:
-    logger.info(f"Executing {inspect.currentframe().f_code.co_name}")
+    logger.info(f"{CYAN}Executing {inspect.currentframe().f_code.co_name}{RESET}")
     cell_id_to_query = None
     object_targets = state.intent.get("intent", {}).get("intentExpectation", {}).get("expectationObject", {}).get("ObjectTarget", [])
     if object_targets:
@@ -637,7 +759,7 @@ def data_agent_node(state: IntentState) -> IntentState:
 
     logger.info(f"Fetching PM data for cell: {cell_id_to_query}")
     try:
-        raw_pm_data_str = get_measurement_data(cell_id_to_query, cell_id_to_query)
+        raw_pm_data_str = get_measurement_data(cell_id_to_query, 1)
         
         pm_metrics = json.loads(raw_pm_data_str)
         pm_metrics["queried_cell_id"] = cell_id_to_query
@@ -649,7 +771,7 @@ def data_agent_node(state: IntentState) -> IntentState:
         logger.info(f"Debug: pm_data: {state.pm_data}")
         state.calculated_ee_metrics = {"RANEnergyEfficiency": calculated_ee_value if calculated_ee_value is not None else "N/A_CALCULATION_FAILED"}
         logger.info(f"Debug: Calculated EE value: {calculated_ee_value}")
-        logger.info(f"Debug: AvgPower: {state.pm_data.get('PEE.AvgPower', 'N/A')}")
+        logger.info(f"Debug: AvgPower: {state.pm_data.get('PEE.Energy', 'N/A')}")
         logger.info(f"Debug: TotPdcpPduVolumeUl: {state.pm_data.get('QosFlow.TotPdcpPduVolumeUl', 'N/A')}")
         logger.info(f"Debug: TotPdcpPduVolumeDl: {state.pm_data.get('QosFlow.TotPdcpPduVolumeDl', 'N/A')}")
 
@@ -660,6 +782,8 @@ def data_agent_node(state: IntentState) -> IntentState:
     return state
 
 def orchestrator_agent_node(state: IntentState) -> IntentState:
+    logger.info(f"{CYAN}Executing {inspect.currentframe().f_code.co_name}{RESET}")
+
     logger.info(f"Executing orchestrator_agent_node for strategy type '{state.current_strategy_type}'")
     intent_id = state.intent.get("intent", {}).get("id", "UNKNOWN_INTENT_ID")
 
@@ -682,7 +806,7 @@ def orchestrator_agent_node(state: IntentState) -> IntentState:
             for config_type, parameters_in_patch in config_types_dict.items():
                 if 'configuredMaxTxPower' in parameters_in_patch:
                     max_tx_power = parameters_in_patch['configuredMaxTxPower']
-                    netconf_client = NETCONFCLIENT(cell_id_str, cell_id_str)
+                    netconf_client = NETCONFCLIENT(1, cell_id_str)
                     netconf_client.configure_tx_power(str(max_tx_power))
                 else:
                     logger.info(f"no target parameters available from: {config_types_dict}")
@@ -713,8 +837,94 @@ def orchestrator_agent_node(state: IntentState) -> IntentState:
         state.fulfilmentStatus = "NOT_FULFILLED" # Set overall status
     return state
 
-# def pm_evaluation_agent_node(state: IntentState) -> IntentState:
-#     logger.info(f"Executing {inspect.currentframe().f_code.co_name}")
+
+def pm_evaluation_agent_node(state: IntentState) -> IntentState:
+    logger.info(f"{CYAN}Executing {inspect.currentframe().f_code.co_name}{RESET}")
+    targets = state.intent["intent"]["intentExpectation"]["expectationTargets"]
+    
+    # Initialize outcomes and assume all targets are met until proven otherwise
+    state.outcomes = []
+    overall_all_targets_met = True
+
+    for target in targets:
+        target_name = target["targetName"]
+        target_condition = target["targetCondition"]
+        target_value_str = target["targetValue"]
+        
+        current_value = None
+        target_status = "NOT_FULFILLED" # Default status for this target
+        failure_reason = None
+
+        # --- Extract current value based on target_name ---
+        if target_name == "RANEnergyEfficiency":
+            current_value_raw = state.calculated_ee_metrics.get(target_name)
+            logger.debug(f"PM Evaluation: Current RANEnergyEfficiency raw value: {current_value_raw}")
+            
+            try:
+                current_value = float(current_value_raw) if current_value_raw not in [None, "N/A_CALCULATION_FAILED"] else None
+            except ValueError:
+                logger.error(f"Invalid RANEnergyEfficiency value for target '{target_name}': '{current_value_raw}'. Cannot evaluate.")
+                current_value = None
+                failure_reason = "Invalid_Current_Value_Format"
+        # Add additional `elif` blocks here for other target_names if they exist in your PM data
+
+        # --- Perform comparison ---
+        if current_value is None:
+            target_status = "NOT_FULFILLED"
+            overall_all_targets_met = False
+            if not failure_reason: # Set reason if not already set by value parsing
+                failure_reason = "Current_Value_Unavailable_or_Invalid"
+        else:
+            try:
+                target_value = float(target_value_str)
+            except ValueError:
+                logger.error(f"Invalid targetValue format for target '{target_name}': '{target_value_str}'. Cannot evaluate.")
+                target_status = "NOT_FULFILLED"
+                overall_all_targets_met = False
+                failure_reason = "Invalid_Target_Value_Format"
+            else:
+                is_met = False
+                if target_condition == "IS_GREATER_THAN":
+                    is_met = current_value > target_value
+                elif target_condition == "IS_LESS_THAN":
+                    is_met = current_value < target_value
+                elif target_condition == "IS_EQUAL_TO":
+                    is_met = current_value == target_value
+                # Add more conditions as needed for your intent types
+
+                if is_met:
+                    target_status = "FULFILLED"
+                else:
+                    target_status = "NOT_FULFILLED"
+                    overall_all_targets_met = False
+                    failure_reason = f"Condition_Not_Met: Current {current_value} vs Target {target_condition} {target_value}"
+        
+        # Add the outcome for this specific target
+        state.outcomes.append({
+            "targetName": target_name,
+            "currentValue": current_value,
+            "targetCondition": target_condition,
+            "targetValue": target_value_str,
+            "fulfilmentStatus": target_status,
+            "failureAnalysis": {"reason": failure_reason} if failure_reason else None
+        })
+        
+        logger.info(f"Target '{target_name}' Status: {target_status}. Current: {current_value}, Target: {target_condition} {target_value_str}")
+    
+    # Set the overall intent fulfillment status based on all targets
+    if overall_all_targets_met:
+        state.fulfilmentStatus = "FULFILLED"
+        logger.info(f"Overall Intent {state.intent.get('intent', {}).get('id', 'UNKNOWN')} Status: FULFILLED.")
+        # Report is set at the end by the router if needed, or by this agent if specific failure.
+        # For now, let's keep the report setting in the router as it's the central decision point.
+    else:
+        # If not all targets are met, the status remains as is (or `None`), and the router decides next.
+        # It's better to NOT set NOT_FULFILLED here directly, as it might be an interim step.
+        # The router will determine if it needs further refinement or definitive NOT_FULFILLED.
+        logger.info(f"Overall Intent {state.intent.get('intent', {}).get('id', 'UNKNOWN')} Status: NOT FULFILLED (targets not met yet).")
+
+    return state
+
 #     intent_id = state.intent.get("intent", {}).get("id", "UNKNOWN_INTENT_ID")
 #     evaluated_outcomes = []
 
@@ -804,58 +1014,38 @@ def orchestrator_agent_node(state: IntentState) -> IntentState:
 #     logger.info(f"PM Evaluation for {intent_id} complete. Final Outcomes: {json.dumps(state.outcomes, indent=2)}")
 #     return state
 
-
-def route_main_agent(state: IntentState) -> str:
-    logger.info(f"Router: Status='{state.fulfilmentStatus}', "
-                f"CurrentStrategyType='{state.current_strategy_type}', "
-                f"TotalRefinementAttempts={state.total_refinement_attempts_for_intent}, "
-                f"PMCycleForConfig={state.current_pm_check_cycle}, PMEvalPending={state.pm_evaluation_pending}")
-
+def route_main_agent(state: IntentState) -> IntentState:
+    """
+    This function now acts as the 'router node'. It's responsible for
+    updating state based on routing conditions (e.g., setting FULFILLED status)
+    and returning the updated state. The actual next node decision (str)
+    is handled by _get_next_route_from_state which is used in add_conditional_edges.
+    """
+    logger.info(f"{RED}Executing {inspect.currentframe().f_code.co_name}{RESET}")
     intent_id = state.intent.get("intent", {}).get("id", "UNKNOWN_INTENT_ID")
 
-    # --- 1. Deadline Check (Highest Priority) ---
-    if state.intent_processing_deadline and datetime.now(timezone.utc) > state.intent_processing_deadline:
-        logger.warning(f"Router for {intent_id}: Intent DEADLINE EXCEEDED. Marking as NOT_FULFILLED.")
+    # IMPORTANT: Any state modifications that depend on routing conditions
+    # must happen here, before returning the state.
+
+    # Example: If a deadline is exceeded, update state before it's passed to the conditional edge
+    if state.observation_deadline and datetime.now(timezone.utc) > state.observation_deadline:
+        logger.warning(f"Router Node for {intent_id}: Intent DEADLINE EXCEEDED. Marking as NOT_FULFILLED.")
         state.fulfilmentStatus = "NOT_FULFILLED"
         state.report = {"intentId": intent_id, "expectationFulfilmentResult": [{"targetStatus": "NOT_FULFILLED", "failureAnalysis": {"notFulfilledState": "TERMINATED", "reason": "Intent processing deadline exceeded."}}]}
-        state.pm_evaluation_pending = False # Stop any active monitoring
-        # store_attempt will be called by the NOT_FULFILLED final block below
+        state.pm_evaluation_pending = False
+        # The _get_next_route_from_state will then see NOT_FULFILLED and return END.
+        return state
 
-    # --- 2. Final FULFILLED state for the intent ---
-    if state.fulfilmentStatus == "FULFILLED":
-        logger.info(f"Router for {intent_id}: Intent FULFILLED. Storing and ENDING.")
-        store_attempt(state, intent_id)
-        return END
-
-    # --- 3. Handling definitive NOT_FULFILLED state (when not actively monitoring a config) ---
-    # This is hit if:
-    #   a. Deadline exceeded (set above).
-    #   b. Max total refinement attempts for the intent reached (set by strategy_agent or checked here).
-    #   c. User rejected an initial or refined strategy (strategy_agent sets NOT_FULFILLED).
-    #   d. LLM gave up on refining the chosen strategy type (strategy_agent sets NOT_FULFILLED).
-    #   e. Orchestrator failed NETCONF (orchestrator_agent sets NOT_FULFILLED).
-    #   f. Strategy_agent failed to produce any strategy/refinement.
-    if state.fulfilmentStatus == "NOT_FULFILLED" and not state.pm_evaluation_pending:
-        logger.info(f"Router for {intent_id}: Intent definitively NOT_FULFILLED (and not in active PM monitoring). Storing and ENDING.")
-        store_attempt(state, intent_id)
-        return END
-
-    # --- 4. Active Closed-Loop Monitoring for an APPLIED configuration ---
-    if state.pm_evaluation_pending:
-        if not state.pm_data or state.pm_data.get("error"):
-            logger.info(f"Router for {intent_id}: Monitoring. PM data needed. To data_agent.")
-            return "data_agent"
-        elif state.pm_data and not state.outcomes: # Fresh PM data, needs evaluation
-            logger.info(f"Router for {intent_id}: Monitoring. Fresh PM. To pm_evaluation_agent.")
-            return "pm_evaluation_agent_node"
-        elif state.outcomes: # Outcomes from pm_evaluation_agent are available
-            state.current_pm_check_cycle += 1
-            logger.info(f"Router for {intent_id}: Monitoring. Outcomes from PM cycle {state.current_pm_check_cycle} "
-                        f"for config params '{state.current_config_parameters}' of strategy type '{state.current_strategy_type}'.")
-
-            all_targets_met = not any(o.get("fulfilmentStatus") != "FULFILLED" for o in state.outcomes)
-            
-            current_report_results = [] # Update report for this observation cycle
+    # Example: If all targets were just fulfilled in the PM eval, update state.
+    # This logic assumes outcomes are fresh from pm_evaluation_agent_node
+    if state.pm_evaluation_pending and state.outcomes:
+        all_targets_met = not any(o.get("fulfilmentStatus") != "FULFILLED" for o in state.outcomes)
+        if all_targets_met and state.fulfilmentStatus != "FULFILLED": # Prevent re-setting if already FULFILLED
+            logger.info(f"Router Node for {intent_id}: All targets FULFILLED. Setting state.fulfilmentStatus.")
+            state.fulfilmentStatus = "FULFILLED"
+            state.pm_evaluation_pending = False # Stop active monitoring
+            # Report generation related to fulfillment
+            current_report_results = []
             for out_eval in state.outcomes:
                 orig_target = next((t for t in state.intent["intent"]["intentExpectation"]["expectationTargets"] if t["targetName"] == out_eval.get("targetName")), None)
                 current_report_results.append({
@@ -869,156 +1059,207 @@ def route_main_agent(state: IntentState) -> str:
                             "totalRefinementAttemptForIntent": state.total_refinement_attempts_for_intent,
                             "pmCheckCycleForThisConfig": state.current_pm_check_cycle}
 
-            if all_targets_met:
-                logger.info(f"Router for {intent_id}: All targets FULFILLED with params '{state.current_config_parameters}' for strategy '{state.current_strategy_type}'.")
-                state.fulfilmentStatus = "FULFILLED"
-                state.pm_evaluation_pending = False
-                return "strategy_agent" # Go to hub, will route to END (handled by section 2)
-            else: # Not all targets met for this config's PM check
-                elapsed_monitoring_time = (datetime.now(timezone.utc) - state.last_config_application_time).total_seconds()
-                end_of_observation_for_this_config = (state.current_pm_check_cycle >= MAX_PM_CHECK_CYCLES_PER_STRATEGY or \
-                                                     elapsed_monitoring_time >= OBSERVATION_PERIOD_SECONDS)
+    # If observation period for current config ended unsuccessfully, reset relevant flags for refinement
+    if state.pm_evaluation_pending and state.outcomes: # Only check if outcomes are fresh from PM eval
+        all_targets_met_current_cycle = not any(o.get("fulfilmentStatus") != "FULFILLED" for o in state.outcomes)
+        if not all_targets_met_current_cycle:
+            elapsed_monitoring_time = (datetime.now(timezone.utc) - state.last_config_application_time).total_seconds()
+            end_of_observation_for_this_config = (elapsed_monitoring_time >= state.observation_deadline.timestamp())
+                                                 
+            if end_of_observation_for_this_config:
+                logger.info(f"Router Node for {intent_id}: Config params '{state.current_config_parameters}' did NOT meet targets after full observation. Clearing for refinement.")
+                state.pm_evaluation_pending = False # Observation for *this config* is over.
+                state.history_summary = {} # Clear history to force refresh for refinement
+                state.outcomes = [] # Clear outcomes for next PM eval (for refined config)
+                # state.pm_data is KEPT as it's input for strategy_agent's refinement
 
-                if end_of_observation_for_this_config:
-                    logger.info(f"Router for {intent_id}: Config params '{state.current_config_parameters}' for strategy '{state.current_strategy_type}' "
-                                f"did NOT meet targets after full observation (PM Cycle {state.current_pm_check_cycle}, Elapsed {elapsed_monitoring_time:.0f}s).")
-                    state.pm_evaluation_pending = False # Observation for *this config* is over.
-                    # The intent is not yet NOT_FULFILLED. We need to try refining.
-                    # state.fulfilmentStatus remains "NONE" or previous ACK.
-                    # The state.pm_data and state.outcomes from this failed observation are preserved
-                    # for the strategy_agent's refinement prompt.
-                    logger.info(f"Router for {intent_id}: Will attempt to REFINE strategy type '{state.current_strategy_type}'.")
-                    state.history_summary = {} # Get fresh history (may include this recent failure if store_attempt was intermediate)
-                    state.outcomes = [] # Clear outcomes before next PM eval (for the *refined* config)
-                    # state.pm_data is KEPT as it's input for strategy_agent's refinement
-                    return "history_agent" # -> then strategy_agent (Phase 2 - Refine)
-                else: # Continue monitoring *this specific applied configuration*
-                    logger.info(f"Router for {intent_id}: Targets not met. Continuing monitoring current config "
-                                f"(Cycle {state.current_pm_check_cycle + 1} next, Elapsed {elapsed_monitoring_time:.0f}s). Waiting {PM_CHECK_INTERVAL_SECONDS}s.")
-                    time.sleep(PM_CHECK_INTERVAL_SECONDS)
-                    state.pm_data = {} # Clear for fresh PM fetch for *this same config's next check*
-                    state.outcomes = [] # Clear outcomes before next PM eval for *this same config*
-                    return "data_agent"
+    # Store attempt needs to be called *after* final status is set, but before END.
+    # It might be best handled by the main loop/orchestrator outside the graph,
+    # or by specific "finalizer" nodes that lead to END.
+    # For now, let's keep it here if it's convenient for report generation.
+    if state.fulfilmentStatus in ["FULFILLED", "NOT_FULFILLED"] and not state.pm_evaluation_pending:
+        logger.info(f"Router Node for {intent_id}: Finalizing and storing attempt.")
+        # store_attempt(state, intent_id) # Call your actual store_attempt function here
 
-    # --- 5. Path for Orchestration or Getting Initial/Refined Strategy ---
-    if state.fulfilmentStatus == "ACKNOWLEDGED": # Strategy (initial or refined) approved by user
+    # Always return the (potentially updated) state.
+    return state
+
+def _get_next_route_from_state(state: IntentState) -> str | Literal[END]:
+    logger.info(f"{RED}Executing {inspect.currentframe().f_code.co_name}{RESET}")
+    
+    intent_id = state.intent.get("intent", {}).get("id", "UNKNOWN_INTENT_ID")
+
+    # --- 1. Deadline Check (Highest Priority for Early Exit) ---
+    # If the processing deadline has passed, mark as NOT_FULFILLED and end.
+    if state.observation_deadline and datetime.now(timezone.utc) > state.observation_deadline:
+        logger.warning(f"Router for {intent_id}: Intent DEADLINE EXCEEDED. Marking as NOT_FULFILLED.")
+        state.fulfilmentStatus = "NOT_FULFILLED" # Set status for final report
+        return END
+
+    # --- 2. Final FULFILLED State (Immediate Stop) ---
+    # If the intent is already marked FULFILLED (by PM evaluation or other means), end the graph.
+    if state.fulfilmentStatus == "FULFILLED":
+        logger.info(f"Router for {intent_id}: Intent FULFILLED. ENDING.")
+        return END
+
+    # --- 3. Overall Attempt Limit Check (Ultimate Failure) ---
+    # If we've exhausted all allowed strategy proposal/refinement attempts, mark as NOT_FULFILLED and end.
+    if state.total_refinement_attempts_for_intent >= MAX_TOTAL_REFINEMENT_ATTEMPTS_FOR_INTENT:
+        logger.warning(f"Router for {intent_id}: Max total refinement attempts ({MAX_TOTAL_REFINEMENT_ATTEMPTS_FOR_INTENT}) reached. Marking NOT_FULFILLED.")
+        state.fulfilmentStatus = "NOT_FULFILLED"
+        # Only set report if not already done by strategy_agent for a specific LLM failure reason
+        if not state.report:
+            state.report = {"intentId": intent_id, "expectationFulfilmentResult": [{"targetStatus": "NOT_FULFILLED", "failureAnalysis": {"reason": "Max total refinement attempts reached for intent."}}]}
+        return END
+
+    # --- 4. Path for Orchestration (Apply the Acknowledged Strategy) ---
+    # If a strategy has been approved by the user (ACKNOWLEDGED status), proceed to apply it.
+    if state.fulfilmentStatus == "ACKNOWLEDGED" and state.config_applied_successfully is False:
         logger.info(f"Router for {intent_id}: Status ACKNOWLEDGED. Routing to orchestrator_agent.")
-        # state.current_config_parameters should have been set by strategy_agent with the params to be applied
         return "orchestrator_agent"
 
-    # --- 6. Default path to get context and then generate/refine strategy ---
-    # This is hit:
-    #   - At the very start of intent processing.
-    #   - After a config's observation failed, and we need to refine (flow is: route -> data -> history -> strategy).
-    #   - If any other path leads here needing a strategy decision.
+    # --- 5. Core Decision Logic: Prioritize PM Data & Evaluation ---
+    # This section handles all decisions based on current PM data and its evaluation.
+    # This covers initial intent, post-orchestration, post-user-rejection, and post-LLM-giveup scenarios.
 
-    # Ensure PM data is available first if a strategy decision is upcoming
-    if (state.current_strategy_type is None or \
-        (state.current_strategy_type and not state.pm_evaluation_pending and state.fulfilmentStatus != "ACKNOWLEDGED")) and \
-       (not state.pm_data or state.pm_data.get("error")):
-        # Condition breakdown:
-        # (state.current_strategy_type is None) -> We need to propose an initial strategy.
-        # OR
-        # (state.current_strategy_type and not state.pm_evaluation_pending and state.fulfilmentStatus != "ACKNOWLEDGED")
-        #   -> We have a strategy type, we are NOT currently observing its application (pm_evaluation_pending=False),
-        #      and it's not just been ACKNOWLEDGED (waiting for orchestrator). This implies a previous
-        #      observation cycle for this strategy type might have completed (and possibly failed),
-        #      and we are now heading towards refining it.
-        # AND in either of these cases, if PM data is missing/invalid...
-        logger.info(f"Router for {intent_id}: PM data needed before strategy decision. To data_agent.")
+    # 5.1. Need PM Data? Go fetch it first.
+    # If PM data is missing or has an error, we need to get it from the data_agent.
+    # Clear outcomes to ensure a fresh evaluation after fetching new data.
+    if not state.pm_data or state.pm_data.get("error"):
+        logger.info(f"Router for {intent_id}: PM data needed for evaluation. Routing to data_agent.")
+        state.outcomes = [] # Clear old outcomes to force a fresh evaluation next.
         return "data_agent"
 
-    # Ensure history summary is available if PM data is present and strategy decision is upcoming
-    if (state.current_strategy_type is None or \
-        (state.current_strategy_type and not state.pm_evaluation_pending and state.fulfilmentStatus != "ACKNOWLEDGED")) and \
-       (state.pm_data and not state.pm_data.get("error")) and \
-       (not state.history_summary or not state.history_summary.get("result")): # Check if history is valid
-        logger.info(f"Router for {intent_id}: History summary needed before strategy decision. To history_agent.")
-        return "history_agent"
-    
-    # If context (PM, History) is ready, and not in other specific flows (like ACKNOWLEDGED or PM_EVAL_PENDING),
-    # then it's time to call strategy_agent.
-    # strategy_agent will determine if it's Phase 1 (initial proposal) or Phase 2 (refinement)
-    # based on state.current_strategy_type.
-    # This path is reached if:
-    #   1. Initial call, PM and History fetched.
-    #   2. A refinement is needed (observation of previous params for current_strategy_type is complete,
-    #      and it wasn't FULFILLED), PM and History (updated with last outcome) are ready.
-    if (state.pm_data and not state.pm_data.get("error") and \
-        state.history_summary and state.history_summary.get("result")) and \
-        (state.fulfilmentStatus not in ["FULFILLED", "NOT_FULFILLED", "ACKNOWLEDGED"] or \
-         (state.fulfilmentStatus == "NONE" and state.current_strategy_type and not state.pm_evaluation_pending) ): 
-         # The last condition (NONE + current_strategy_type + not pm_eval_pending) specifically targets 
-         # the case where a refinement cycle just finished its observation unsuccessfully.
-        logger.info(f"Router for {intent_id}: Context (PM, History) ready. Routing to strategy_agent.")
-        return "strategy_agent"
+    # 5.2. Have PM Data, but need to evaluate it?
+    # This path is taken right after `data_agent` fetches new data and returns to the router.
+    # It ensures that `pm_evaluation_agent_node` is always called when new PM data is available.
+    if not state.outcomes: # This means PM data is present, but outcomes aren't computed for it.
+        logger.info(f"Router for {intent_id}: PM data available, evaluating outcomes. Routing to pm_evaluation_agent_node.")
+        return "pm_evaluation_agent_node"
 
-    # Fallback if other specific conditions in the router (ACKNOWLEDGED, PM_EVAL_PENDING) are met
-    # This part should be reached if, for example, status is ACKNOWLEDGED, or PM_EVALUATION_PENDING is true,
-    # and those earlier blocks in the router will handle the routing.
-    # If it falls through all specific handlers, it means something is unexpected.
+    # 5.3. Have PM Data AND it's been evaluated (outcomes are present). Now make decisions.
+    # This is the central decision point after PM has been evaluated.
+    if state.outcomes:
+        all_targets_met = not any(o.get("fulfilmentStatus") != "FULFILLED" for o in state.outcomes)
 
-    logger.warning(f"Router for {intent_id}: Unhandled state or waiting for specific phase. "
-                   f"Status='{state.fulfilmentStatus}', PMDataValid={state.pm_data and not state.pm_data.get('error')}, "
-                   f"HistoryValid={state.history_summary and state.history_summary.get('result')}, "
-                   f"PMEvalPending={state.pm_evaluation_pending}. Re-routing to strategy_agent as a convergence point.")
-    # This fallback is a bit of a catch-all. Ideally, the conditions above should perfectly guide.
-    # If it reaches here, `strategy_agent` might be called without perfect prerequisites,
-    # and its internal checks would then matter more. The goal is to avoid this.
-    # A safer fallback if prerequisites are NOT met and no other path is clear might be to error or end.
-    # However, since strategy_agent is the entry point of the graph after each node,
-    # sending it back to strategy_agent allows route_main_agent to re-evaluate the state cleanly.
+        if all_targets_met:
+            logger.info(f"Router for {intent_id}: All targets FULFILLED by current RAN state. Setting FULFILLED status and Ending.")
+            state.fulfilmentStatus = "FULFILLED" # Explicitly set to FULFILLED
+            return END # Immediate stop when fulfilled.
+        else:
+            # Targets not met. Decide next step based on whether we're actively monitoring an applied config.
+            logger.info(f"Router for {intent_id}: Targets NOT met by current RAN state.")
+
+            # Check if we are in an active monitoring phase (i.e., a config was applied and we're observing it).
+            # `state.pm_evaluation_pending` is set by `orchestrator_agent` after applying a config.
+            # `state.last_config_application_time` is also set by `orchestrator_agent`.
+            if state.pm_evaluation_pending and state.last_config_application_time:
+                elapsed_monitoring_time = (datetime.now(timezone.utc) - state.last_config_application_time).total_seconds()
+                remaining_time = (state.observation_deadline - datetime.now(timezone.utc)).total_seconds()
+                end_of_observation_for_this_config = (elapsed_monitoring_time >= remaining_time)
+
+                logger.info(f"{GREEN}Router for {intent_id}: Elapsed monitoring time: {elapsed_monitoring_time} seconds. and {remaining_time} {RESET}")
+                logger.info(f"{GREEN}Router for {intent_id}: end_of_observation_for_this_config: {end_of_observation_for_this_config} {RESET}")
+                            
+                if not end_of_observation_for_this_config:
+                    logger.info(f"Router for {intent_id}: Targets not met.  Will attempt REFINE.")
+                    state.pm_evaluation_pending = False # Reset for new strategy generation.
+                    return "strategy_agent" # Go to strategy_agent for refinement.
+                else:
+                    logger.info(f"Router for {intent_id}: Targets not met during observation.")
+                    state.outcomes = [] # Clear outcomes to force new PM data and re-evaluation cycle.
+                    state.fulfilmentStatus = "NOT_FULFILLED"
+                    if not state.report:
+                        state.report = {"intentId": intent_id, "expectationFulfilmentResult": [{"targetStatus": "NOT_FULFILLED", "failureAnalysis": {"notFulfilledState": "TERMINATED", "reason": "Intent processing deadline exceeded."}}]}
+                    state.pm_evaluation_pending = False
+                    return END # Continue the monitoring loop.
+            else:
+                # This branch is for cases where targets are not met, but we are NOT in an active monitoring loop.
+                # This includes:
+                #   a) Initial intent processing (no strategy applied yet).
+                #   b) After a user rejects a proposed strategy (initial or refined).
+                #   c) After the LLM indicated it "gave up" on a refinement.
+                logger.info(f"Router for {intent_id}: Targets not met, no active monitoring loop. Routing to strategy_agent for proposal/refinement.")
+                state.pm_evaluation_pending = False # Not actively monitoring a specific applied config.
+                return "strategy_agent" # Go to strategy_agent for initial proposal or general refinement.
+
+    # --- 6. Fallback/Error State ---
+    # This section should ideally not be reached if all states are covered.
+    logger.error(f"Router for {intent_id}: Reached an unexpected state. Returning to strategy_agent as fallback.")
+    state.pm_evaluation_pending = False # Don't assume monitoring in an error state.
     return "strategy_agent"
 
 def build_graph():
     graph = StateGraph(IntentState)
-    # nodes = ["strategy_agent", "data_agent", "history_agent", "orchestrator_agent", "pm_evaluation_agent_node"]
-    # for node_name in nodes: graph.add_node(node_name, globals()[node_name])
+
     graph.add_node("strategy_agent", strategy_agent)
     graph.add_node("data_agent", data_agent_node)
-    graph.add_node("history_agent", history_agent)
+    # graph.add_node("history_agent", history_agent) # <--- REMOVED
     graph.add_node("orchestrator_agent", orchestrator_agent_node)
-    # graph.add_node("pm_evaluation_agent_node", pm_evaluation_agent_node)
-    graph.set_entry_point("strategy_agent")
-    graph.add_conditional_edges("strategy_agent", route_main_agent, {
-        "data_agent": "data_agent", 
-        "history_agent": "history_agent",
-        "orchestrator_agent": "orchestrator_agent", 
-        "strategy_agent": "strategy_agent", END: END,
-    })
-    fixed_edges = [("data_agent", "strategy_agent"), 
-                   ("history_agent", "strategy_agent"),
-                   ("orchestrator_agent", "strategy_agent")]
-    for src, dest in fixed_edges: graph.add_edge(src, dest)
+    graph.add_node("pm_evaluation_agent_node", pm_evaluation_agent_node)
+    graph.add_node("router_node", route_main_agent) # route_main_agent is the actual node function
+
+    graph.set_entry_point("router_node")
+
+    # Fixed edge from strategy_agent to the router_node
+    graph.add_edge("strategy_agent", "router_node")
+
+    # Conditional edges originate FROM THE DEDICATED ROUTER_NODE
+    graph.add_conditional_edges(
+        "router_node",
+        _get_next_route_from_state,
+        {
+            "data_agent": "data_agent",
+            # "history_agent": "history_agent", # <--- REMOVED
+            "orchestrator_agent": "orchestrator_agent",
+            "pm_evaluation_agent_node": "pm_evaluation_agent_node",
+            "strategy_agent": "strategy_agent",
+            END: END,
+        }
+    )
+
+    # Fixed edges from all other 'worker' nodes back to the ROUTER_NODE
+    fixed_edges = [
+        ("strategy_agent", "router_node"),
+        ("data_agent", "router_node"),
+        # ("history_agent", "router_node"), # <--- REMOVED
+        ("orchestrator_agent", "router_node"),
+        ("pm_evaluation_agent_node", "router_node")
+    ]
+    for src, dest in fixed_edges:
+        graph.add_edge(src, dest)
+
     return graph.compile()
 
 if __name__ == "__main__":
     graph = build_graph() # Assuming build_graph uses the modified agents
+    
     intent_input = {
         "intent": {
             "id": "INTENT_EE_Test_335",
             "intentExpectation": {
-                "expectationObject": {"objectInstance": "SubNetwork_1", "ObjectTarget": ["2"]},
-                "expectationTargets": [{"targetName": "RANEnergyEfficiency", "targetCondition": "IS_GREATER_THAN", "targetValue": "10", "targetUnit": "percentage"}] # Example target value
+                "expectationObject": {"objectInstance": "SubNetwork_1", "ObjectTarget": ["7"]},
+                "expectationTargets": [{"targetName": "RANEnergyEfficiency", "targetCondition": "IS_GREATER_THAN", "targetValue": "1200000", "bit": "bit/joule"}] # Example target value
             },
-            "startTime": datetime.now(timezone.utc).isoformat(),
-            "endTime": (datetime.now(timezone.utc) + timedelta(minutes=10)).isoformat()
+            "observationPeriod": 20
         }
     }
+    
     initial_state = IntentState(intent=intent_input) # Corrected structure
     # initial_state = IntentState(**initial_state_dict) # Use the dict directly if it matches IntentState fields
 
     # Set deadline for the intent processing
     processing_start_time = datetime.now(timezone.utc)
-    initial_state.intent_processing_deadline = processing_start_time + timedelta(seconds=600)
     
+    initial_state.observation_deadline = processing_start_time + timedelta(minutes=intent_input["intent"]["observationPeriod"])
+    print(f"Intent processing deadline set to: {initial_state.observation_deadline.isoformat()}")
     # Initialize fields for the simplified single-strategy refinement loop
     initial_state.current_strategy_type = None # strategy_agent will set this on first call
     initial_state.current_config_parameters = None
     initial_state.total_refinement_attempts_for_intent = 0 # Will be incremented by strategy_agent
 
     logger.info(f"Starting graph for intent: {initial_state.intent.get('id', 'N/A')}, "
-                f"Deadline: {initial_state.intent_processing_deadline.isoformat() if initial_state.intent_processing_deadline else 'N/A'}")
+                f"Deadline: {initial_state.observation_deadline.isoformat() if initial_state.observation_deadline else 'N/A'}")
     
     # graph = build_graph()
     # intent_input = {
@@ -1036,7 +1277,9 @@ if __name__ == "__main__":
     # logger.info(f"Starting graph with intent: {json.dumps(intent_input, indent=2)}")
     
     # # --- To run the actual graph (requires OPENAI and NETCONF setup) ---
-    final_state = graph.invoke(initial_state)
+    config = RunnableConfig(recursion_limit=1000)
+    print(config)
+    final_state = graph.invoke(initial_state,config)
     # logger.info(f"Graph execution complete. Final state: {final_state.model_dump_json(indent=2)}")
     # logger.info(f"All STRATEGY_ATTEMPTS: {json.dumps(STRATEGY_ATTEMPTS, indent=2)}")
     # # --- End of actual graph run block ---
