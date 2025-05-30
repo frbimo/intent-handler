@@ -137,7 +137,7 @@ def parse_measurement_data(xml_file_path, filter_gnb_du=None, filter_nrcelldu=No
                         param_name = meas_types[p_value]
                         try:
                             float_val = float(r_tag.text)
-                            target_cell_parameters[param_name] = int(round(float_val))
+                            target_cell_parameters[param_name] = float_val
                         except (ValueError, TypeError):
                             target_cell_parameters[param_name] = r_tag.text
         
@@ -169,13 +169,78 @@ def get_measurement_data(filter_gnb_du=None, filter_nrcelldu=None)-> str:
     Returns:
         str: A JSON string containing the filtered measurement data.
     """
-    target_directory = "examples/measdata" # Change this to your actual directory
-    # target_directory = "/tmp/viavi/o1/pm_reports" # Change this to your actual directory
+    # target_directory = "examples/measdata" # Change this to your actual directory
+    target_directory = "/tmp/viavi/o1/pm_reports" # Change this to your actual directory
     filter_gnb_du = int(filter_gnb_du) if filter_gnb_du else None
     filter_nrcelldu = int(filter_nrcelldu) if filter_nrcelldu else None
+
+    print("Debug value of filter_gnb_du:", filter_gnb_du)
+    print("Debug value of  filter_nrcelldu:", filter_nrcelldu)
     latest_file_path = get_latest_xml_file_by_time(target_directory)
     print("file opened: ",latest_file_path)
-    return parse_measurement_data(latest_file_path, filter_gnb_du, filter_nrcelldu)
+    parsed_data = parse_measurement_data(latest_file_path, filter_gnb_du, filter_nrcelldu)
+    pm_metrics = json.loads(parsed_data)
+    
+    keys_for_value_conversion = {
+        # "DRB.UEThpDl",
+        # "DRB.UEThpUl",
+        # "QosFlow.TotPdcpPduVolumeUl",
+        # "QosFlow.TotPdcpPduVolumeDl",
+        # "PEE.AvgPower" 
+        "Viavi.PEE.EnergyEfficiency"
+    }
+
+    processed_data = {} # Initialize a new dictionary for the results
+
+    # Iterate through each key-value pair in the original PM metrics
+    for original_key, original_value in pm_metrics.items():
+
+        processed_value = original_value # Start with the original value
+
+        # First, attempt to convert string values to actual numbers (int/float)
+        if isinstance(original_value, str):
+            try:
+                processed_value = int(original_value)
+            except ValueError:
+                try:
+                    processed_value = float(original_value)
+                except ValueError:
+                    # If it's a string but not a number, keep it as is
+                    print(f"Metric '{original_key}' has non-numeric string value '{original_value}'. Skipping numeric conversion.")
+                    processed_value = original_value # Keep the original string if not convertible
+        
+        # Now, check if this key is one we need to apply unit conversions to
+        if original_key in keys_for_value_conversion:
+            # Apply specific unit conversions based on the ORIGINAL key's assumed input unit
+            # if original_key in ["QosFlow.TotPdcpPduVolumeUl", "QosFlow.TotPdcpPduVolumeDl"]:
+            #     # Assuming input is in Mbits, convert to kbits
+            #     if isinstance(processed_value, (int, float)):
+            #         processed_value *= 1_000 # 1 Mbit = 1,000,000 bits
+            #         print(f"Converted '{original_key}' from Mbits to kbits. New value: {processed_value}")
+                
+            # if original_key in ["DRB.UEThpUl", "DRB.UEThpDl"]:
+            #     # Assuming input is in Gbps, convert to bps
+            #     if isinstance(processed_value, (int, float)):
+            #         processed_value *= 1_000_000 # 1 Gbps = 1,000,000 bps
+            #         print(f"Converted '{original_key}' from Gbps to bps. New value: {processed_value}")
+            
+            # Add other conversion logic for PEE.AvgPower or other metrics here if needed
+            # For example, if PEE.AvgPower was in kW and you want Watts:
+            # elif original_key == "PEE.AvgPower":
+            #     if isinstance(processed_value, (int, float)):
+            #         processed_value *= 1_000 # kW to Watts
+
+            #   Add other conversion logic for PEE.AvgPower or other metrics here if needed
+            # For example, if PEE.AvgPower was in kW and you want Watts:
+            if original_key == "Viavi.PEE.EnergyEfficiency":
+                if isinstance(processed_value, (int, float)):
+                    processed_value *= 1_000 # kbit/joule to bit/joule
+
+        # Add the processed value with its original key to the result dictionary
+        processed_data[original_key] = processed_value
+            
+    return json.dumps(processed_data, indent=2)
+    # return parse_measurement_data(latest_file_path, filter_gnb_du, filter_nrcelldu)
 
 # --- Example Usage ---
 

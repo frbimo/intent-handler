@@ -108,8 +108,8 @@ class NETCONFCLIENT():
 
     def __init__(self, target_carrier_id,target_gnbdu_id):
         self.bandwidth = "100"
-        self.target_carrier_id = target_carrier_id
-        self.target_gnbdu_id = target_gnbdu_id
+        self.target_carrier_id = str(target_carrier_id)
+        self.target_gnbdu_id = str(target_gnbdu_id)
         self.new_tx_power = "0"
     
     def convert_to_xml(self, index):
@@ -293,14 +293,14 @@ class NETCONFCLIENT():
                 """
 
                 xpath_filter = f"""
-                <filter type="xpath" select="ns0:ManagedElement/ns1:GNBDUFunction[id='12']"
+                <filter type="xpath" select="ns0:ManagedElement/ns1:GNBDUFunction[id='']"
                 </filter> 
                 """
 
+                # result = m.get_config(source='running')
                 result = m.get_config(source='running')
-                # filtered_result = m.get_config(source='running', filter=xpath_filter)
                 print("\n*** Filtered Result ***")
-                
+                print(result.xml)
                 xml_content = result.xml
 
                     # Define namespaces
@@ -319,18 +319,27 @@ class NETCONFCLIENT():
 
                 # Iterate through all GNBDUFunction elements
                 for gnbdu_element in root.findall('.//ns1:GNBDUFunction', namespaces=namespaces):
+                    logger.info(f"Found gnbdu_element: {gnbdu_element}")
                     id_element = gnbdu_element.find('ns1:id', namespaces=namespaces)
+                    logger.info(f"Found available GNBDUFunction ids: {id_element.text if id_element is not None else 'None'} and target gnbdu id: {self.target_gnbdu_id}")
                     if id_element is not None and id_element.text == self.target_gnbdu_id:
                         found_gnbdu = gnbdu_element
                         break  # Stop iterating once found
 
                 if found_gnbdu is not None:
                     # Find the specific NRSectorCarrier within this GNBDUFunction
+                    logger.info(f"Find specific NRSectorCarrier '{self.target_carrier_id}'. Now searching for NRSectorCarrier with id '{self.target_carrier_id}'.")
                     for carrier_element in found_gnbdu.findall('ns3:NRSectorCarrier', namespaces=namespaces):
                         carrier_id_element = carrier_element.find('ns3:id', namespaces=namespaces)
+                        logger.info(f"Find specific NRSectorCarrier ids: {carrier_id_element.text if carrier_id_element is not None else 'None'}")
+                        logger.info(f"Target NRSectorCarrier id: {self.target_carrier_id}")
+                        logger.info(f"Result of comparison: {carrier_id_element is not None and carrier_id_element.text == self.target_carrier_id}")
+                        logger.info(f"Result of comparison types carrier_id_element: {type(carrier_id_element.text)} and target_carrier_id {type(self.target_carrier_id)}")
+
                         if carrier_id_element is not None and carrier_id_element.text == self.target_carrier_id:
                             # Found the target NRSectorCarrier, now update the tx power
                             attributes_element = carrier_element.find('ns3:attributes', namespaces=namespaces)
+
                             if attributes_element is not None:
                                 tx_power_element = attributes_element.find('ns3:configuredMaxTxPower', namespaces=namespaces)
                                 print(tx_power_element.text)
@@ -371,6 +380,8 @@ class NETCONFCLIENT():
                 logger.error(f"Failed to perform action: {str(e)}")
 
     def get_current_tx_power(self):
+        logger.info(f"Getting current TX power for GNBDU ID '{self.target_gnbdu_id}' and Carrier ID '{self.target_carrier_id}'")
+        
         try:
             with manager.connect(host="192.168.8.28", port=31212, username="root", password="viavi", hostkey_verify=False) as m:
                 # Use subtree filter to get NRSectorCarrier configuration
@@ -385,10 +396,8 @@ class NETCONFCLIENT():
                     </GNBDUFunction>
                 </ManagedElement>
                 '''
-   
-                # result = m.get_config(source="running", filter=("subtree", filter_xml))
-                # result = m.get_config(source="running", filter=("xpath", xpath_filter_string))
-                result = m.get_config(source="running")
+                
+                result = m.get_config(source="running", filter=("subtree", filter_xml))
                 
                 # Define namespaces for parsing 
                 namespaces = {
