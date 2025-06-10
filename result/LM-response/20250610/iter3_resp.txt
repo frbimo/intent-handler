@@ -1,0 +1,10 @@
+{
+  "result": {
+    "refined_parameters": {
+      "configuredMaxTxPower": 22
+    },
+    "give_up_on_this_strategy_type": false
+  },
+  "explanation": "Analysis of the last seven attempts shows that decreasing configuredMaxTxPower from 26 to 24 and then to 25 resulted in improved energy efficiency. However, the target of 800000 bit/joule was not met. Further decreasing configuredMaxTxPower to 22 is proposed to continue improving energy efficiency.",
+  "error": null
+}

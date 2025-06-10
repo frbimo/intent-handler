@@ -1,0 +1,87 @@
+## Target Expectation
+[{"targetName": "RANEnergyEfficiency", "targetCondition": "IS_GREATER_THAN", "targetValue": "800000", "bit": "bit/joule"}]
+## Strategy History (last seven attempts)
+1. Strategy: [{"strategyId": "S_PowerOptimization_ece2_iter2_iter3_iter4", "strategyType": "PowerOptimization", "configurations": [{"configId": "C_PowerOptimization_iter4", "configType": "EnergySavingConfig", "parameters": {"configuredMaxTxPower": 22}, "affectedCells": ["7"]}]}]
+   Calculated Energy Efficiency (bit_per_joule): 797432.9999999995
+
+2. Strategy: [{"strategyId": "S_PowerOptimization_ece2_iter2_iter3", "strategyType": "PowerOptimization", "configurations": [{"configId": "C_PowerOptimization_iter3", "configType": "EnergySavingConfig", "parameters": {"configuredMaxTxPower": 24}, "affectedCells": ["7"]}]}]
+   Calculated Energy Efficiency (bit_per_joule): 793777.0000000013
+
+3. Strategy: [{"strategyId": "S_PowerOptimization_ece2_iter2", "strategyType": "PowerOptimization", "configurations": [{"configId": "C_PowerOptimization_iter2", "configType": "EnergySavingConfig", "parameters": {"configuredMaxTxPower": 26}, "affectedCells": ["7"]}]}]
+   Calculated Energy Efficiency (bit_per_joule): 788055.0000000002
+
+4. Strategy: [{"strategyId": "S_PowerOptimization_ece2", "strategyType": "PowerOptimization", "configurations": [{"configId": "C_PowerOptimization_init", "configType": "EnergySavingConfig", "parameters": {"configuredMaxTxPower": 25}, "affectedCells": ["7"]}]}]
+   Calculated Energy Efficiency (bit_per_joule): 791233.9999999992
+
+5. Strategy: {"result": {"chosen_strategy_type": "", "initial_parameters": {"configuredMaxTxPower": 30}, "give_up_on_this_strategy_type": "false"}, "explanation": "Obtain existing running configuration from RAN. Current network state: configuredMaxTxPower is set to 30", "error": "null"}
+   Calculated Energy Efficiency (bit_per_joule): 676956.4125000001
+
+6. Strategy: ""
+   Calculated Energy Efficiency (bit_per_joule): None
+
+7. Strategy: ""
+   Calculated Energy Efficiency (bit_per_joule): None
+
+## Current Observations
+- PM Data: {"PEE.EnergyEfficiency": 797432.9999999995}
+- Calculated Energy Efficiency (bit_per_joule): {"RANEnergyEfficiency": 797432.9999999995}
+- Outcome History: [{"targetName": "RANEnergyEfficiency", "currentValue": 797432.9999999995, "targetCondition": "IS_GREATER_THAN", "targetValue": "800000", "fulfilmentStatus": "NOT_FULFILLED", "failureAnalysis": {"reason": "Condition_Not_Met: Current 797432.9999999995 vs Target IS_GREATER_THAN 800000.0"}}]
+
+## Constraints
+- Allowed Parameter Ranges: {"1": {"configurableParameters": {"parameters": {"ChannelBandwidthUL": {}, "ChannelBandwidthDL": {}}}}, "2": {"configurableParameters": {"parameters": {"configuredMaxTxPower": {}}}}, "3": {"configurableParameters": {"parameters": {"configuredMaxTxPower": {}}}}, "7": {"configurableParameters": {"parameters": {"configuredMaxTxPower": {}}}}}
+- Strategy Types Available: ['PowerOptimization', 'ThroughputOptimization']
+
+## Example Output
+```json
+{
+  "result": {
+    "refined_parameters": {
+      "configuredMaxTxPower": 23    
+      },
+    "give_up_on_this_strategy_type": false
+  },
+  "explanation": "Previous strategies failed due to underpowered TX. Increased TX within allowed range.",
+  "error": null
+}
+---
+
+## Instructions:
+- Start by writing a short diagnosis under the `"explanation"` field, based on the "Diagnosis" section above.
+- Then, propose refined parameters based on the diagnosis.
+- Propose new parameters (within CELL_CAPABILITIES) to improve target fulfillment.
+- If no further improvement is feasible, set `give_up_on_this_strategy_type: true`.
+
+## Diagnosis (MUST precede any proposal)
+
+First, evaluate how each key parameter (e.g., `maxTxPower`) affected energy efficiency in the past seven attempts.  
+Focus on:
+- Whether increasing/decreasing the parameter improved or degraded energy efficiency
+- Whether a parameter appears to have no effect
+- Correlations visible in the Strategy History
+
+Be explicit and quantitative when possible. Do NOT generate a new strategy until this analysis is complete.
+
+## Rules of Thumb (Apply these when analyzing trends)
+- If decreasing a parameter (e.g., configuredMaxTxPower) consistently leads to improved energy efficiency over multiple iterations, continue decreasing, within limits.
+- If increasing a parameter consistently improves performance, consider increasing it further unless a plateau is reached.
+- If changes in a parameter show no effect on energy efficiency, consider freezing that parameter for now.
+- If energy efficiency is consistently decreasing despite changes, consider abandoning the current strategy type.
+- Avoid reversing parameter direction without evidence that the new direction yields benefit.
+
+## Output Format (STRICT JSON – DO NOT DEVIATE)
+Respond **only** with a JSON object matching the exact structure below.  
+**Do not include any natural language or text outside the JSON.**
+
+```json
+{
+  "result": {
+    "refined_parameters": {
+      "param_name_1": <numeric_or_string_value>,
+      "param_name_2": <numeric_or_string_value>
+    },
+    "give_up_on_this_strategy_type": false
+  },
+  "explanation": "<Short explanation of reasoning behind the refined parameters>",
+  "error": null
+}
+```
