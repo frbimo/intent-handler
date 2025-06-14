@@ -1,0 +1,82 @@
+## Target Expectation
+[{"targetName": "RANEnergyEfficiency", "targetCondition": "IS_GREATER_THAN", "targetValue": "810000", "bit": "bit/joule"}]
+## Strategy History
+
+            RUN #1
+            Strategy: {"result": {"chosen_strategy_type": "", "parameters": {"configuredMaxTxPower": 30}, "give_up_on_this_strategy_type": "false"}, "explanation": "Obtain existing running configuration from RAN. Current network state: configuredMaxTxPower is set to 30", "error": "null"}
+            Calculated Energy Efficiency (bit_per_joule): {'PEE.EnergyEfficiency': 765493.0000000001}
+            
+
+            RUN #2
+            Strategy: [{"strategyId": "S_PowerOptimization_9bd2", "strategyType": "PowerOptimization", "configurations": [{"configId": "C_PowerOptimization_init", "configType": "EnergySavingConfig", "parameters": {"configuredMaxTxPower": 25}, "affectedCells": ["7"]}]}]
+            Calculated Energy Efficiency (bit_per_joule): {'PEE.EnergyEfficiency': 791234.0000000001}
+            
+
+            RUN #3
+            Strategy: [{"strategyId": "S_PowerOptimization_9bd2_iter2", "strategyType": "PowerOptimization", "configurations": [{"configId": "C_PowerOptimization_iter2", "configType": "EnergySavingConfig", "parameters": {"configuredMaxTxPower": 20}, "affectedCells": ["7"]}]}]
+            Calculated Energy Efficiency (bit_per_joule): {'PEE.EnergyEfficiency': 799756.9999999999}
+            
+
+            RUN #4
+            Strategy: [{"strategyId": "S_PowerOptimization_9bd2_iter2_iter3", "strategyType": "PowerOptimization", "configurations": [{"configId": "C_PowerOptimization_iter3", "configType": "EnergySavingConfig", "parameters": {"configuredMaxTxPower": 22}, "affectedCells": ["7"]}]}]
+            Calculated Energy Efficiency (bit_per_joule): {'PEE.EnergyEfficiency': 797433.0}
+            
+
+## Constraints
+- Allowed Parameter Ranges: {"1": {"configurableParameters": [{"parameterName": "configuredMaxTxPower", "valueMax": "30", "valueMin": "10"}]}, "2": {"configurableParameters": [{"parameterName": "configuredMaxTxPower", "valueMax": "30", "valueMin": "10"}]}, "3": {"configurableParameters": [{"parameterName": "configuredMaxTxPower", "valueMax": "30", "valueMin": "10"}]}, "7": {"configurableParameters": [{"parameterName": "configuredMaxTxPower", "valueMax": "30", "valueMin": "10"}]}}
+- Strategy Types Available: ['PowerOptimization', 'ThroughputOptimization']
+
+## Example Output
+```json
+{
+  "result": {
+    "parameters": {
+      "configuredMaxTxPower": 23    
+      },
+    "give_up_on_this_strategy_type": false
+  },
+  "explanation": "Previous strategies failed due to underpowered TX. Increased TX within allowed range.",
+  "error": null
+}
+```
+---
+
+## Instructions:
+- Start by writing a short diagnosis under the `"explanation"` field, based on the "Diagnosis" section above.
+- Then, propose refined parameters based on the diagnosis.
+- If no further improvement is feasible, set `give_up_on_this_strategy_type: true`.
+
+## Diagnosis (MUST precede any proposal)
+
+First, evaluate how each key parameter (e.g., `maxTxPower`) affected energy efficiency in the past seven attempts.  
+Focus on:
+- Whether increasing/decreasing the parameter improved or degraded energy efficiency
+- Whether a parameter appears to have no effect
+- Correlations visible in the Strategy History
+
+Be explicit and quantitative when possible. Do NOT generate a new strategy until this analysis is complete.
+
+## Rules of Thumb (Apply these when analyzing trends)
+- If decreasing a parameter (e.g., configuredMaxTxPower) consistently leads to improved energy efficiency over multiple iterations, continue decreasing, within limits.
+- If increasing a parameter consistently improves performance, consider increasing it further unless a plateau is reached.
+- If changes in a parameter show no effect on energy efficiency, consider freezing that parameter for now.
+- If energy efficiency is consistently decreasing despite changes, consider abandoning the current strategy type.
+- Avoid reversing parameter direction without evidence that the new direction yields benefit.
+
+## Output Format (STRICT JSON – DO NOT DEVIATE)
+Respond **only** with a JSON object matching the exact structure below.  
+**Do not include any natural language or text outside the JSON.**
+
+```json
+{
+  "result": {
+    "parameters": {
+      "param_name_1": <numeric_or_string_value>,
+      "param_name_2": <numeric_or_string_value>
+    },
+    "give_up_on_this_strategy_type": false
+  },
+  "explanation": "<Short explanation of reasoning behind the refined parameters>",
+  "error": null
+}
+```

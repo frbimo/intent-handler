@@ -1,0 +1,11 @@
+{
+  "result": {
+    "chosen_strategy_type": "PowerOptimization",
+    "parameters": {
+      "configuredMaxTxPower": 25
+    },
+    "give_up_on_this_strategy_type": false
+  },
+  "explanation": "Reduced transmission power to conserve energy while maintaining a reasonable transmission power to improve RAN Energy Efficiency.",
+  "error": null
+}

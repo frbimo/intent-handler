@@ -1,0 +1,49 @@
+## Intent
+- Intent ID: INTENT_EE_Test_335
+- Target KPIs: [{"targetName": "RANEnergyEfficiency", "targetCondition": "IS_GREATER_THAN", "targetValue": "810000", "bit": "bit/joule"}]
+- Object Target: ['7']
+
+## Current Observations
+- PM Data: {"PEE.EnergyEfficiency": 765493.0000000001}
+- Energy Efficiency (bit_per_joule): {"RANEnergyEfficiency": 765493.0000000001}
+- Runtime Configuration: {"configuredMaxTxPower": "30"}
+- Historical Insights (if any): {}
+
+## Configuration Constraints
+- Parameter Ranges (CELL_CAPABILITIES): {"1": {"configurableParameters": [{"parameterName": "configuredMaxTxPower", "valueMax": "30", "valueMin": "10"}]}, "2": {"configurableParameters": [{"parameterName": "configuredMaxTxPower", "valueMax": "30", "valueMin": "10"}]}, "3": {"configurableParameters": [{"parameterName": "configuredMaxTxPower", "valueMax": "30", "valueMin": "10"}]}, "7": {"configurableParameters": [{"parameterName": "configuredMaxTxPower", "valueMax": "30", "valueMin": "10"}]}}
+- Available Strategy Types: ['PowerOptimization', 'ThroughputOptimization']
+
+### Example Output
+```json
+{
+  "result": {
+    "chosen_strategy_type": "PowerOptimization",
+    "parameters": {
+      "configuredMaxTxPower": 23    
+      },
+    "give_up_on_this_strategy_type": false
+  },
+  "explanation": "Previous strategies failed due to underpowered TX. Increased TX within allowed range.",
+  "error": null
+}
+```
+---
+
+## Instructions
+1. From the available strategy types, select **one** strategy type best suited to fulfill the intent targets.
+2. The chosen strategy will be used exclusively and refined further. Choose wisely based on current PM data and efficiency.
+
+## Output Format (strictly enforced – DO NOT DEVIATE). Follow this example exactly:
+```json
+{
+  "result": {
+    "chosen_strategy_type": <strategy_type_string>,
+    "parameters": {  
+        "param_name_1": <numeric_or_string_value>,
+        "param_name_2": <numeric_or_string_value> 
+        }
+  },
+  "explanation": "<Short explanation of reasoning behind the refined parameters>",,
+  "error": null
+}
+```
