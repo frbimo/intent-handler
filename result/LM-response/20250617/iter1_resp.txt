@@ -1,0 +1,10 @@
+{
+  "result": {
+    "parameters": {
+      "configuredMaxTxPower": 15
+    },
+    "give_up_on_this_strategy_type": false
+  },
+  "explanation": "Decreasing configuredMaxTxPower from 20 to 15, as the previous decrease from 30 to 20 resulted in an improvement in energy efficiency from 765493 to 799756 bit/joule. Continuing this trend may lead to further improvement.",
+  "error": null
+}

@@ -1,0 +1,10 @@
+{
+  "result": {
+    "parameters": {
+      "configuredMaxTxPower": 12
+    },
+    "give_up_on_this_strategy_type": false
+  },
+  "explanation": "Based on the Strategy History, decreasing configuredMaxTxPower from 30 to 20 and then to 15 has consistently improved energy efficiency. The most recent decrease from 20 to 15 resulted in an energy efficiency of 802493.0000000001, which is closer to the target of 810000. Continuing this trend, decreasing configuredMaxTxPower further to 12 is proposed, within the allowed range of 10 to 30.",
+  "error": null
+}
