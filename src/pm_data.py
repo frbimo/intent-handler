@@ -3,8 +3,8 @@ import json
 import os
 import re
 import datetime
-
-
+import time
+from datetime import timedelta
 def get_latest_xml_file_by_time(directory_path, filename_pattern=r'B?(\d{8})\.(\d{4})\+\d{4}-\d{4}\+\d{4}_Cell_\d+\.xml'):
     """
     Scans a directory for XML files matching a specific timestamp pattern in their filename,
@@ -153,7 +153,58 @@ def parse_measurement_data(xml_file_path, filter_gnb_du=None, filter_nrcelldu=No
         print(f"An unexpected error occurred: {e}")
         return json.dumps({})
     
-def get_measurement_data(filter_gnb_du=None, filter_nrcelldu=None)-> str:
+def open_read_xml(file_path, filter_gnb_du, filter_nrcelldu):
+    parsed_data = parse_measurement_data(file_path, filter_gnb_du, filter_nrcelldu)
+    return json.loads(parsed_data)
+
+def extract_begin_time_from_xml_file(file_path: str):
+    """
+    Extracts the 'beginTime' attribute from the <measData> tag within <fileHeader>
+    from an XML file.
+
+    Args:
+        file_path: The path to the XML file.
+
+    Returns:
+        The value of the 'beginTime' attribute as a string, or None if not found or file error.
+    """
+    if not os.path.exists(file_path):
+        print(f"Error: File not found at '{file_path}'")
+        return None
+
+    try:
+        # Parse the XML file directly
+        tree = ET.parse(file_path)
+        root = tree.getroot()
+
+        # Define the namespace
+        namespace = "{http://www.3gpp.org/ftp/specs/archive/28_series/28.532#measData}"
+
+        # Navigate to the <fileHeader> element
+        file_footer = root.find(f"{namespace}fileFooter")
+
+        if file_footer is not None:
+            # Inside <fileHeader>, find the <measData> element
+            meas_data_element = file_footer.find(f"{namespace}measData")
+            
+            if meas_data_element is not None:
+                # Get the 'endTime' attribute
+                begin_time = meas_data_element.get("endTime")
+                return begin_time
+            else:
+                print("Error: <measData> element not found within <fileHeader>.")
+        else:
+            print("Error: <fileHeader> element not found in the XML.")
+
+    except ET.ParseError as e:
+        print(f"Error parsing XML file '{file_path}': {e}")
+    except Exception as e:
+        print(f"An unexpected error occurred while processing '{file_path}': {e}")
+        
+    return None
+
+from types import NoneType
+def get_measurement_data(filter_gnb_du=None, filter_nrcelldu=None, time_configured_str=None)-> str:
     """
     Wrapper function to get measurement data from an XML file.
     This function is a placeholder for any additional processing or
@@ -173,20 +224,55 @@ def get_measurement_data(filter_gnb_du=None, filter_nrcelldu=None)-> str:
     target_directory = "/tmp/viavi/o1/pm_reports" # Change this to your actual directory
     filter_gnb_du = int(filter_gnb_du) if filter_gnb_du else None
     filter_nrcelldu = int(filter_nrcelldu) if filter_nrcelldu else None
-
+    
     print("Debug value of filter_gnb_du:", filter_gnb_du)
     print("Debug value of  filter_nrcelldu:", filter_nrcelldu)
     latest_file_path = get_latest_xml_file_by_time(target_directory)
     print("file opened: ",latest_file_path)
-    parsed_data = parse_measurement_data(latest_file_path, filter_gnb_du, filter_nrcelldu)
-    pm_metrics = json.loads(parsed_data)
-    
+
+
+    pm_timestamp_str = extract_begin_time_from_xml_file(latest_file_path)
+    pm_timestamp = datetime.datetime.fromisoformat(pm_timestamp_str)
+    time_configured=datetime.datetime.now() + timedelta(seconds=30)
+    print("######")
+    print(type(pm_timestamp_str))
+    print(type(time_configured_str))
+    if isinstance(time_configured_str, datetime.datetime):
+        time_configured = time_configured_str
+    elif isinstance(time_configured_str, str):
+        time_configured = datetime.datetime.fromisoformat(time_configured_str)
+    else:
+        pass
+        # this might none type on initial state.
+
+
+    max_attempt=20
+    tried_attempt = 0
+    while pm_timestamp is None or time_configured.timestamp() > pm_timestamp.timestamp():
+        if tried_attempt >= max_attempt:
+            print(f"attempt exceed max_attempt at {max_attempt}")
+            break 
+
+        max_attempt=max_attempt+1
+       
+        print(f"\nCondition 'time_configured ({time_configured}) > pm_timestamp ({pm_timestamp})' is TRUE.")
+        print("Waiting for a new file...")
+        time.sleep(10) # Using 1 second for demonstration, not 1000 seconds
+        
+        latest_file_path = get_latest_xml_file_by_time(target_directory)
+        print("file opened: ",latest_file_path)
+        pm_timestamp_str = extract_begin_time_from_xml_file(latest_file_path)
+        pm_timestamp = datetime.datetime.fromisoformat(pm_timestamp_str)
+
+    pm_metrics = open_read_xml(latest_file_path, filter_gnb_du, filter_nrcelldu )
+
     keys_for_value_conversion = {
         # "DRB.UEThpDl",
         # "DRB.UEThpUl",
         # "QosFlow.TotPdcpPduVolumeUl",
         # "QosFlow.TotPdcpPduVolumeDl",
-        # "PEE.AvgPower" 
+        "PEE.AvgPower" 
+        "PEE.Energy"
         "Viavi.PEE.EnergyEfficiency"
     }
 

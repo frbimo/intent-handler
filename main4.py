@@ -1,7 +1,7 @@
 from typing import Dict, List, Any, Optional, Literal
 from langgraph.graph import StateGraph, END
 from langchain_core.runnables.config import RunnableConfig
-
+from collections import deque
 from pydantic import BaseModel
 import json
 from datetime import datetime, timezone, timedelta # Ensure timezone aware datetimes
@@ -25,10 +25,7 @@ from openai import OpenAI
 import inspect
 
 # --- Configuration Constants for Closed Loop ---
-MIN_WAIT_FIRST_PM_CHECK_SECONDS = 65
-PM_CHECK_INTERVAL_SECONDS = 60
-OBSERVATION_PERIOD_SECONDS = 125
-MAX_PM_CHECK_CYCLES_PER_STRATEGY = 10
+MIN_WAIT_FIRST_PM_CHECK_SECONDS = 180
 MAX_TOTAL_REFINEMENT_ATTEMPTS_FOR_INTENT = 30
 
 # COLOR CODE For Print
@@ -60,18 +57,6 @@ class NotFulfilledStateEnum(str, Enum):
     SUSPENDED = "SUSPENDED"
     TERMINATED = "TERMINATED"
     FULFILMENTFAILED = "FULFILMENTFAILED"
-
-# class PMData(BaseModel):
-#     """
-#     Represents the PM data structure expected from the PM Data API.
-#     This is a simplified version; adjust fields as per your actual PM data structure.
-#     """
-#     DRBUEThpDl_Mbps: Optional[float] = None
-#     DRBUEThpUl_Mbps: Optional[float] = None
-#     TotPdcpPduVolumeUl: Optional[float] = None
-#     TotPdcpPduVolumeDl: Optional[float] = None
-#     PEEAvgPower_: Optional[float] = None # Average Power Consumption in Watts
-#     # Add other fields as necessary based on your PM data structure
 
 class IntentState(BaseModel):
     initialized: bool = False # Indicates if the state has been initialized
@@ -106,13 +91,31 @@ class IntentState(BaseModel):
     class Config:
         arbitrary_types_allowed = True
 
-# --- Mocked or Example Data (Replace with your actual data sources) ---
 CELL_CAPABILITIES = {
-    "1": {"configurableParameters": {"parameters": {"ChannelBandwidthUL": {}, "ChannelBandwidthDL": {}}}},
-    "2": {"configurableParameters": {"parameters": {"configuredMaxTxPower": {}}}},
-    "3": {"configurableParameters": {"parameters": {"configuredMaxTxPower": {}}}},
-    "7": {"configurableParameters": {"parameters": {"configuredMaxTxPower": {}}}}
-
+    "1": {
+        "configurableParameters": [{
+            "parameterName": "configuredMaxTxPower",
+            "valueMax":"30", 
+            "valueMin":"10"}]
+            },
+    "2": {
+        "configurableParameters": [{
+            "parameterName": "configuredMaxTxPower",
+            "valueMax":"30", 
+            "valueMin":"10"}]
+            },
+    "3": {
+        "configurableParameters": [{
+            "parameterName": "configuredMaxTxPower",
+            "valueMax":"30", 
+            "valueMin":"10"}]
+            },
+    "7": {
+        "configurableParameters": [{
+            "parameterName": "configuredMaxTxPower",
+            "valueMax":"30", 
+            "valueMin":"10"}]
+            },
 }
 STRATEGY_DATABASE = {
     "PowerOptimization": {"configType": "EnergySavingConfig"},
@@ -120,6 +123,8 @@ STRATEGY_DATABASE = {
 }
 CONFIG_TEMPLATES = {"ThroughputOptimization": {"parameters": {}}}
 STRATEGY_ATTEMPTS = {}
+
+last_two_configs = deque(maxlen=7)
 
 # --- Helper Functions ---
 def store_attempt(state: IntentState, intent_id: str) -> None:
@@ -185,7 +190,7 @@ def store_attempt(state: IntentState, intent_id: str) -> None:
 
     attempt_data = {
         "intent_id": intent_id,
-        "attempt_id": attempt_id, # Good to have its own ID
+        # "attempt_id": attempt_id, # Good to have its own ID
         "timestamp": timestamp,
         "fulfilment_status_at_storage": state.fulfilmentStatus,
 
@@ -290,24 +295,48 @@ def call_llm(messages: List[Dict]) -> Dict:
     try:
         response = client.chat.completions.create(
             model="meta/llama-3.1-70b-instruct", messages=messages, max_tokens=4000, temperature=0.2, top_p=0.7
+            # model="deepseek-ai/deepseek-r1-0528", messages=messages, max_tokens=4096, temperature=0.2, top_p=0.7
         )
         llm_resp = response.choices[0].message.content
-        logger.debug(f"LLM raw response: {llm_resp}")
+        logger.info(f"LLM raw response: {llm_resp}")
+        
+        #TODO: THIS Line below works for deepseek model
         match = re.search(r"```json\s*(\{.*?\})\s*```", llm_resp, re.DOTALL)
-        if not match: match = re.search(r"(\{.*?\})", llm_resp, re.DOTALL)
+        json_string=""
+
         if match:
+            print("response match json syntax")
             json_string = match.group(1)
             print(json_string)
-            try:
-                data = json.loads(json_string)
-                logger.info("LLM call successful, JSON parsed.")
-                return data
-            except json.JSONDecodeError as e:
-                logger.error(f"Error decoding JSON from LLM: {e}. String: {json_string}")
-                return {"error": "Error decoding JSON", "details": str(e), "problematic_string": json_string}
         else:
-            logger.warning("No JSON block found in the LLM response.")
-            return {"explanation_only": llm_resp, "error": "No JSON block found"}
+            print("response doesnt match json syntax")
+            json_string = llm_resp
+            print(json_string)
+
+        try:
+            data = json.loads(json_string)
+            logger.info("LLM call successful, JSON parsed.")
+            return data
+        except json.JSONDecodeError as e:
+            logger.error(f"Error decoding JSON from LLM: {e}. String: {json_string}")
+            return {"error": "Error decoding JSON", "details": str(e), "problematic_string": json_string}
+
+        # #TODO: THIS Line below works for LLAMA model
+        # match = re.search(r"```json\s*(\{.*?\})\s*```", llm_resp, re.DOTALL)
+        # if not match: match = re.search(r"(\{.*?\})", llm_resp, re.DOTALL)
+        # if match:
+        #     json_string = match.group(1)
+        #     print(json_string)
+        #     try:
+        #         data = json.loads(json_string)
+        #         logger.info("LLM call successful, JSON parsed.")
+        #         return data
+        #     except json.JSONDecodeError as e:
+        #         logger.error(f"Error decoding JSON from LLM: {e}. String: {json_string}")
+        #         return {"error": "Error decoding JSON", "details": str(e), "problematic_string": json_string}
+        # else:
+        #     logger.warning("No JSON block found in the LLM response.")
+        #     return {"explanation_only": llm_resp, "error": "No JSON block found"}
     except Exception as e:
         logger.error(f"Exception during LLM call: {e}")
         return {"error": f"LLM API call failed: {str(e)}"}
@@ -315,17 +344,18 @@ def call_llm(messages: List[Dict]) -> Dict:
 def calculate_energy_efficiency(pm_data: Dict) -> Optional[float]:
     # pdcp_ul_key = "QosFlow.TotPdcpPduVolumeUl" #Mbits 
     # pdcp_dl_key = "QosFlow.TotPdcpPduVolumeDl" #Mbits 
-    power_key = "PEE.AvgPower" # Watt 
+    # power_key = "PEE.AvgPower" # Watt 
     # power_key = "PEE.Energy" # kWh
-    ue_thp_ul_key = "DRB.UEThpUl" # bps
-    ue_thp_dl_key = "DRB.UEThpDl" # bps
+    power_key = "Viavi.PEE.EnergyEfficiency" # 
+    # ue_thp_ul_key = "DRB.UEThpUl" # bps
+    # ue_thp_dl_key = "DRB.UEThpDl" # bps
 
     logger.info(f"{GREEN}Calculating Energy Efficiency from PM data{RESET}")
 
     # # --- 3GPP uses PDCPU SDU --- #
     # if pdcp_ul_key in pm_data and pdcp_dl_key in pm_data and power_key in pm_data:
     #     try:
-    #         total_pdcp_volume_kbit = (float(pm_data[pdcp_ul_key]) + float(pm_data[pdcp_dl_key]))
+    #         total_pdcp_volume_kbit = (float(≈[pdcp_ul_key]) + float(pm_data[pdcp_dl_key]))
     #         # total_power_kWh = float(pm_data[power_key]) / 1000 # Convert Watts to kW (1 kW = 1000 W)
     #         total_power_kWh = float(pm_data[power_key]) # Convert Watts to kW (1 kW = 1000 W)
     #         logger.info(f"{GREEN}Total PDCP Volume (UL: {float(pm_data[pdcp_ul_key])} + DL: {float(pm_data[pdcp_dl_key])}): {total_pdcp_volume_kbit} kbit, Total Power Consumption: {total_power_kWh} kWh{RESET}")
@@ -344,27 +374,33 @@ def calculate_energy_efficiency(pm_data: Dict) -> Optional[float]:
     #     logger.warning(f"Cannot calculate EE: Missing PM data keys: {', '.join(missing)}")
     #     return None
 
-    # --- IEEE uses Throughput --- #
-    if ue_thp_ul_key in pm_data and ue_thp_dl_key in pm_data and power_key in pm_data:
-        try:
-            total_throughput_bits = (float(pm_data[ue_thp_ul_key]) + float(pm_data[ue_thp_dl_key]))
-            # total_power_kWh = float(pm_data[power_key]) / 1000 # Convert Watts to kW (1 kW = 1000 W)
-            total_power_kWh = float(pm_data[power_key]) # Convert Watts to kW (1 kW = 1000 W)
-            logger.info(f"{GREEN}Total Throughput Volume (UL: {float(pm_data[ue_thp_ul_key])} + DL: {float(pm_data[ue_thp_dl_key])}): {total_throughput_bits} kbit, Total Power Consumption: {total_power_kWh} kWh{RESET}")
-            if total_power_kWh > 0:
-                ee = total_throughput_bits / total_power_kWh
-                logger.info(f"Calculated EE: {total_throughput_bits} / {total_power_kWh} = {ee}")
-                return ee
-            else:
-                logger.warning("Cannot calculate EE: Total power consumption is zero or not positive.")
-                return 0.0 if total_throughput_bits == 0 else None # Or a marker for very high EE
-        except ValueError:
-            logger.error(f"Could not convert PM data for EE calculation to float.")
-            return None
+    # # --- IEEE uses Throughput --- #
+    # if ue_thp_ul_key in pm_data and ue_thp_dl_key in pm_data and power_key in pm_data:
+    #     try:
+    #         total_throughput_bits = (float(pm_data[ue_thp_ul_key]) + float(pm_data[ue_thp_dl_key]))
+    #         # total_power_kWh = float(pm_data[power_key]) / 1000 # Convert Watts to kW (1 kW = 1000 W)
+    #         total_power_kWh = float(pm_data[power_key]) # Convert Watts to kW (1 kW = 1000 W)
+    #         logger.info(f"{GREEN}Total Throughput Volume (UL: {float(pm_data[ue_thp_ul_key])} + DL: {float(pm_data[ue_thp_dl_key])}): {total_throughput_bits} kbit, Total Power Consumption: {total_power_kWh} kWh{RESET}")
+    #         if total_power_kWh > 0:
+    #             ee = total_throughput_bits / total_power_kWh
+    #             logger.info(f"Calculated EE: {total_throughput_bits} / {total_power_kWh} = {ee}")
+    #             return ee
+    #         else:
+    #             logger.warning("Cannot calculate EE: Total power consumption is zero or not positive.")
+    #             return 0.0 if total_throughput_bits == 0 else None # Or a marker for very high EE
+    #     except ValueError:
+    #         logger.error(f"Could not convert PM data for EE calculation to float.")
+    #         return None
+    # else:
+    #     missing = [k for k in [ue_thp_ul_key, ue_thp_dl_key, power_key] if k not in pm_data]
+    #     logger.warning(f"Cannot calculate EE: Missing PM data keys: {', '.join(missing)}")
+    #     return None
+    logger.info(f"pm_data: {pm_data}")
+
+    if pm_data == "":
+        return pm_data
     else:
-        missing = [k for k in [ue_thp_ul_key, ue_thp_dl_key, power_key] if k not in pm_data]
-        logger.warning(f"Cannot calculate EE: Missing PM data keys: {', '.join(missing)}")
-        return None
+        return float(pm_data[power_key])
 
 # --- Agent Nodes ---
 def history_agent(state: IntentState) -> IntentState:
@@ -437,6 +473,7 @@ Output JSON with:
                                "explanation": "LLM processing failed.", "error": response.get('error', 'Unknown')}
     return state
 
+
 def filter_and_rename_metrics_for_json(pm_metrics: dict) -> dict:
     """
     Renames specified metric keys and converts numeric string values to actual numbers.
@@ -452,37 +489,43 @@ def filter_and_rename_metrics_for_json(pm_metrics: dict) -> dict:
     """
     # This dictionary defines the exact keys you want to keep and their new names
     keys_to_rename_map = {
-        "DRB.UEThpDl": "DRB.UEThpDl_bps",
-        "DRB.UEThpUl": "DRB.UEThpUl_bps",
+        # "DRB.UEThpDl": "DRB.UEThpDl_bps",
+        # "DRB.UEThpUl": "DRB.UEThpUl_bps",
         # "QosFlow.TotPdcpPduVolumeUl": "QosFlow.TotPdcpPduVolumeUl_Mbits",
         # "QosFlow.TotPdcpPduVolumeDl": "QosFlow.TotPdcpPduVolumeDl_Mbits",
         # "PEE.Energy": "PEE.Energy_kWh"
-        "PEE.AvgPower": "PEE.AvgPower_Watts", # Assuming this is the average power consumption in Watts
-
+        # "PEE.AvgPower": "PEE.AvgPower_Watts", # Assuming this is the average power consumption in Watts
+        "Viavi.PEE.EnergyEfficiency" : "PEE.EnergyEfficiency"
     }
 
     filtered_and_renamed_metrics = {}
 
     # Iterate through the 'keys_to_rename_map' to ensure we only process desired keys
     for original_key_in_map, new_key_name in keys_to_rename_map.items():
-        if original_key_in_map in pm_metrics:
-            # If the original key exists in the raw pm_metrics, process its value
-            value = pm_metrics[original_key_in_map]
-            
-            processed_value = value
-            # Attempt to convert string values to int or float for better JSON representation
-            if isinstance(value, str):
-                try:
-                    processed_value = int(value)
-                except ValueError:
+        logger.info(f"##pm_metrics##: {pm_metrics}")
+        
+        if pm_metrics:
+
+            if original_key_in_map in pm_metrics:
+                # If the original key exists in the raw pm_metrics, process its value
+                value = pm_metrics[original_key_in_map]
+                
+                processed_value = value
+                # Attempt to convert string values to int or float for better JSON representation
+                if isinstance(value, str):
                     try:
-                        processed_value = float(value)
+                        processed_value = int(value)
                     except ValueError:
-                        # Value is a string but not a number, keep as string
-                        pass
+                        try:
+                            processed_value = float(value)
+                        except ValueError:
+                            # Value is a string but not a number, keep as string
+                            pass
             
-            # Add the item to the new dictionary with the new key name
-            filtered_and_renamed_metrics[new_key_name] = processed_value
+                # Add the item to the new dictionary with the new key name
+                filtered_and_renamed_metrics[new_key_name] = processed_value
+                logger.info(f"##pm_metrics after##: {filtered_and_renamed_metrics}")
+
         else:
             # Log a warning if a key you expected to rename wasn't found in the input data
             logger.warning(f"Metric '{original_key_in_map}' (to be renamed to '{new_key_name}') not found in the input PM data. Skipping.")
@@ -497,7 +540,7 @@ def strategy_agent(state: IntentState) -> IntentState:
     intent = state.intent
     intent_id = intent.get("intent", {}).get("id", "UNKNOWN_INTENT_ID")
     
-     # mark intent initialized
+    # mark intent initialized
     if not state.initialized:
         state.initialized = True
         logger.info(f"StrategyAgent initialized for intent {state.intent.get('intent', {}).get('id', 'UNKNOWN_INTENT_ID')}.")
@@ -519,7 +562,7 @@ def strategy_agent(state: IntentState) -> IntentState:
             return state
 
 
-
+        
         state.total_refinement_attempts_for_intent += 1 # Count this initial proposal as the first attempt
 
         history_insights = state.history_summary.get("result", {})
@@ -533,44 +576,49 @@ def strategy_agent(state: IntentState) -> IntentState:
 
         logger.info(f"Obtained runtime Energy Efficiency Metrics {intent_id}: {json.dumps(state.calculated_ee_metrics)}")
         user_prompt_initial = f"""
-Propose an INITIAL strategy type and configuration parameters for intent {intent_id}.
-Intent Targets: {json.dumps(targets)}
-Object Target: {object_target}
-Current Energy Efficiency Metrics in bit_per_joule: {json.dumps(state.calculated_ee_metrics)}
-Obtained runtime configuration parameters: {json.dumps(state.current_config_parameters)}
-Historical Insights: {json.dumps(history_insights, indent=2)}
-Current PM Data: {json.dumps(filter_and_rename_metrics_for_json(state.pm_data))}
-STRATEGY_DATABASE: {json.dumps(STRATEGY_DATABASE)}
-CELL_CAPABILITIES: {json.dumps(CELL_CAPABILITIES)}
 
-Instruction:
-- Select ONE `strategyType` from STRATEGY_DATABASE that seems most appropriate.
-- Propose initial `parameters` for this strategyType, considering PM data and CELL_CAPABILITIES. Parameters to be adjusted should be within the capabilities of the target cells.
-- This will be the ONLY strategy type used and refined for this intent. Choose wisely.
-output format: 
-```json
-{{ "result": {{ "chosen_strategy_type": "...", "initial_parameters": {{...}} }}, "explanation": "...", "error": null }}
-```
+## Instructions
+1. From the available strategy types, select **one** strategy type best suited to fulfill the intent targets.
+2. The chosen strategy will be used exclusively and refined further. Choose wisely based on current PM data and efficiency.
 
-example output:
+## Intent
+- Intent ID: {intent_id}
+- Target KPIs: {json.dumps(targets)}
+- Object Target: {object_target}
+
+## Current Observations
+- PM Data: {json.dumps(filter_and_rename_metrics_for_json(state.pm_data))}
+- Energy Efficiency (bit_per_joule): {json.dumps(state.calculated_ee_metrics)}
+- Runtime Configuration: {json.dumps(state.current_config_parameters)}
+- Historical Insights (if any): {json.dumps(history_insights, indent=2)}
+
+## Configuration Constraints
+- Parameter Ranges (CELL_CAPABILITIES): {json.dumps(CELL_CAPABILITIES)}
+- Available Strategy Types: {list(STRATEGY_DATABASE.keys())}
+
+## Output Format (strictly enforced – DO NOT DEVIATE). Follow this example exactly:
 ```json
 {{
   "result": {{
-    "chosen_strategy_type": "PowerOptimization",
-    "initial_parameters": {{
-      "configuredMaxTxPower": 16
-    }}
+    "chosen_strategy_type": <strategy_type_string>,
+    "parameters": {{  
+        "param_name_1": <numeric_or_string_value>,
+        "param_name_2": <numeric_or_string_value> 
+        }}
   }},
-  "explanation": "...",
+  "explanation": "<Short explanation of reasoning behind the refined parameters>",,
   "error": null
 }}
 ```
 """
-        messages = [{"role": "system", "content": "You are an AI proposing an initial 5G configuration strategy. Output JSON."}, {"role": "user", "content": user_prompt_initial}]
+        logger.info("---- PROMPT ----")
+        logger.info(user_prompt_initial)
+        logger.info("---- END PROMPT ----")
+        messages = [{"role": "system", "content": "You are an AI system initializing the best strategy for 5G RAN configuration based on current network observations and operator intent."}, {"role": "user", "content": user_prompt_initial}]
         response = call_llm(messages)
 
         if response.get("error") or not response.get("result") or \
-           not response["result"].get("chosen_strategy_type") or not response["result"].get("initial_parameters"):
+           not response["result"].get("chosen_strategy_type") or not response["result"].get("parameters"):
             logger.error(f"StrategyAgent (Initial) LLM error or invalid proposal for {intent_id}: {response.get('error', 'Invalid structure')}")
             state.fulfilmentStatus = "NOT_FULFILLED"
             state.total_refinement_attempts_for_intent -=1 # Revert count
@@ -578,15 +626,15 @@ example output:
             return state
 
         chosen_strategy_type = response["result"]["chosen_strategy_type"]
-        initial_parameters = response["result"]["initial_parameters"]
+        parameters = response["result"]["parameters"]
         explanation = response.get("explanation", "N/A")
         logger.info(f"LLM Initial Strategy Explanation for {intent_id}: {explanation}")
 
-        # user_input = input(f"LLM proposed initial strategy type: '{chosen_strategy_type}' with params {initial_parameters}. Use this type for all refinements? ('yes' to confirm): ")
+        # user_input = input(f"LLM proposed initial strategy type: '{chosen_strategy_type}' with params {parameters}. Use this type for all refinements? ('yes' to confirm): ")
         user_input = "yes" # For testing, assume user always approves the initial strategy type
         if user_input.lower() == "yes":
             state.current_strategy_type = chosen_strategy_type
-            state.current_config_parameters = initial_parameters
+            state.current_config_parameters = parameters
             # Construct the state.strategies and state.patches
             strategy_id = f"S_{chosen_strategy_type}_{str(uuid4())[:4]}"
             config_id = f"C_{chosen_strategy_type}_init"
@@ -600,15 +648,16 @@ example output:
                     "configurations": [{
                         "configId": config_id,
                         "configType": config_type_from_db, # Or LLM can suggest if more flexible
-                        "parameters": initial_parameters,
+                        "parameters": parameters,
                         "affectedCells": object_target # Simplification, ensure these are valid
                     }]
                 }]
             }
+
             state.patches = {} # Derive patches
             for cell in object_target: # Simplification
                 if cell in CELL_CAPABILITIES:
-                    state.patches[cell] = {config_type_from_db: initial_parameters}
+                    state.patches[cell] = {config_type_from_db: parameters}
             
             state.applied_strategy_id = strategy_id
             state.fulfilmentStatus = "ACKNOWLEDGED"
@@ -639,31 +688,111 @@ example output:
 
         state.total_refinement_attempts_for_intent += 1 # Count this refinement attempt
 
+        logger.info(f"""check last applied parameters and outcomes: \n
+                    {json.dumps(last_two_configs[0])}\n 
+                    {json.dumps(last_two_configs[1])}\n 
+                    {json.dumps(last_two_configs[2])}\n
+                    {json.dumps(last_two_configs[3])}\n
+                    {json.dumps(last_two_configs[4])}\n
+                    {json.dumps(last_two_configs[5])}\n
+                    {json.dumps(last_two_configs[6])}\n
+                    """)
+
+        # if last_two_configs[0].get("result_after_strategy", "{}") is not {}:                       
+        #     result_1 = filter_and_rename_metrics_for_json(last_two_configs[0].get("result_after_strategy", "{}"))
+        # if last_two_configs[1].get("result_after_strategy", "{}") is not {}:    
+        #     result_2 = filter_and_rename_metrics_for_json(last_two_configs[1].get("result_after_strategy", "{}"))
+        # if last_two_configs[2].get("result_after_strategy", "{}") is not {}:    
+        #     result_3 = filter_and_rename_metrics_for_json(last_two_configs[2].get("result_after_strategy", "{}"))
+        # if last_two_configs[3].get("result_after_strategy", "{}") is not {}:    
+        #     result_4 = filter_and_rename_metrics_for_json(last_two_configs[3].get("result_after_strategy", "{}"))
+        # if last_two_configs[4].get("result_after_strategy", "{}") is not {}:    
+        #     result_5 = filter_and_rename_metrics_for_json(last_two_configs[4].get("result_after_strategy", "{}"))
+        # if last_two_configs[5].get("result_after_strategy", "{}") is not {}:    
+        #     result_6 = filter_and_rename_metrics_for_json(last_two_configs[5].get("result_after_strategy", "{}"))
+        # if last_two_configs[6].get("result_after_strategy", "{}") is not {}:    
+        #     result_7 = filter_and_rename_metrics_for_json(last_two_configs[6].get("result_after_strategy", "{}"))
 
         # state.current_config_parameters holds the *last applied* parameters
         # state.pm_data and state.outcomes hold the results of *that last application*
+        strategy_history_list = []
+        run_attempt = 0
+        for i in range(len(last_two_configs)):
+            if last_two_configs[i].get("strategy", {}) == "":
+                continue
+            print("len :", len(last_two_configs))
+            print("i :", i)
+            run_attempt=run_attempt+1
+            tmp_text = f"""
+            RUN #{run_attempt}
+            Strategy: {json.dumps(last_two_configs[i].get("strategy", {}))}
+            Calculated Energy Efficiency (bit_per_joule): {filter_and_rename_metrics_for_json(last_two_configs[i].get("result_after_strategy", "{}"))}
+            """
+            strategy_history_list.append(tmp_text)
+        
+        result_str = "\n".join(strategy_history_list)
+
         user_prompt_refine = f"""
-Targets: {json.dumps(state.intent["intent"]["intentExpectation"]["expectationTargets"])}
-Previous Parameters: {json.dumps(state.current_config_parameters)}
-PM Data (post-application): {json.dumps(filter_and_rename_metrics_for_json(state.pm_data))}
-Outcomes: {json.dumps(state.outcomes)}
-Current Energy Efficiency Metrics in bit_per_joule: {json.dumps(state.calculated_ee_metrics)}
-Parameter Ranges (CELL_CAPABILITIES): {json.dumps(CELL_CAPABILITIES)}
-Strategy Reference (STRATEGY_DATABASE): {json.dumps(STRATEGY_DATABASE)}
+## Instructions:
+- The target is defined in the ## Target Expectation section.
+- Begin by writing a short diagnosis in the `"explanation"` field, based on the ## Diagnosis section.
+- Then, propose refined parameters based on the diagnosis and available history.
+- Do **not** suggest parameter values outside the allowed ranges.
+- Do **not** invent or extrapolate new parameter values if no further valid changes are possible.
+- You must follow strict rules about parameter boundaries and stopping conditions. If parameters cannot be improved further within limits, you must abandon the strategy and set `"give_up_on_this_strategy_type": true`.
+## Diagnosis (MUST precede any proposal)
 
-Instructions:
-- Analyze why the previous parameters underperformed.
-- Propose new parameters (within CELL_CAPABILITIES) to improve target fulfillment.
-- If no further improvement is feasible, set `give_up_on_this_strategy_type: true`.
+First, evaluate how each key parameter (e.g., `maxTxPower`) affected energy efficiency in the past seven attempts.  
+Focus on:
+- Whether increasing/decreasing the parameter improved or degraded energy efficiency
+- Whether a parameter appears to have no effect
+- Correlations visible in the Strategy History
 
-Output format:
+Be explicit and quantitative when possible. Do not propose or modify any parameters until you have completed the diagnosis and written it under the "explanation" field.'
+
+## Rules of Thumb (Apply these when analyzing trends)
+- If decreasing a parameter (e.g., configuredMaxTxPower) consistently leads to improved energy efficiency over multiple iterations, continue decreasing, within limits.
+- If increasing a parameter consistently improves performance, consider increasing it further unless a plateau is reached.
+- If changes in a parameter show no effect on energy efficiency, consider freezing that parameter for now.
+- If energy efficiency is consistently decreasing despite changes, consider abandoning the current strategy type.
+- Avoid reversing parameter direction without evidence that the new direction yields benefit.
+
+## Target Expectation
+{json.dumps(state.intent["intent"]["intentExpectation"]["expectationTargets"])}
+## Strategy History
+{result_str}
+
+## Constraints
+- Allowed Parameter Ranges: {json.dumps(CELL_CAPABILITIES)}
+- Strategy Types Available: {list(STRATEGY_DATABASE.keys())}
+
+## Output Format (STRICT JSON – DO NOT DEVIATE)
+Respond **only** with a JSON object matching the exact structure below.  
+**Do not include any natural language or text outside the JSON.**
+
 ```json
-{{ "result": {{ "refined_parameters": {{...}}, "give_up_on_this_strategy_type": false/true }}, "explanation": "...", "error": null }}
+{{
+  "result": {{
+    "parameters": {{
+      "param_name_1": <numeric_or_string_value>,
+      "param_name_2": <numeric_or_string_value>
+    }},
+    "give_up_on_this_strategy_type": false
+  }},
+  "explanation": "<Short explanation of reasoning behind the refined parameters>",
+  "error": null
+}}
 ```
 """
+        logger.info("---- PROMPT ----")
+        logger.info(user_prompt_refine)
+        logger.info("---- END PROMPT ----")
+
         messages = [{"role": "system", "content": "You are an AI optimizing 5G strategies based on observed performance. Generate response in JSON."}, {"role": "user", "content": user_prompt_refine}]
         response = call_llm(messages)
-
+        logger.info("---- RESPONSE ----")
+        logger.info(response)
+        logger.info("---- END RESPONSE ----")
         if response.get("error") or not response.get("result"):
             logger.error(f"StrategyAgent (Refine) LLM error for {intent_id}: {response.get('error', 'No result')}")
             # LLM failed to refine, so this attempt is flawed. Mark as NOT_FULFILLED.
@@ -675,27 +804,33 @@ Output format:
         explanation = response.get("explanation", "N/A")
         logger.info(f"LLM Refinement Explanation for {intent_id}: {explanation}")
 
-        refined_parameters = response["result"].get("refined_parameters")
+        parameters = response["result"].get("parameters")
         give_up = response["result"].get("give_up_on_this_strategy_type", False)
 
-        if give_up or not refined_parameters:
-            logger.info(f"LLM indicated to give up on '{state.current_strategy_type}' or no refinement for {intent_id}. Re-evaluating.")
-            # --- IMPORTANT CHANGE FOR LLM GIVE UP ---
-            # DO NOT set fulfilmentStatus to NOT_FULFILLED here.
-            # Allow the router to re-evaluate the current RAN state.
-            state.pm_evaluation_pending = False # Not pending application of a new refined strategy
-            # Current_strategy_type remains, but this 'give up' counts as an attempt.
-            # The router's max_attempts check will handle final termination.
-            # state.outcomes might still be populated from the *last* PM evaluation
-            # The router will pick it up and go to data_agent if targets not met.
-            # Clear outcomes if you want a fresh PM evaluation cycle.
-            state.outcomes = []
+        if give_up or not parameters:
+            if give_up:
+                logger.info(f"LLM indicated to give up on '{state.current_strategy_type}' or no refinement for {intent_id}. Re-evaluating.")
+                            
+                state.fulfilmentStatus = "NOT_FULFILLED"
+                state.report = {"intentId": intent_id, "expectationFulfilmentResult": [{"targetStatus": "NOT_FULFILLED", "failureAnalysis": {"reason": f"LLM failed to refine strategy '{state.current_strategy_type}'"}}]}
+                state.pm_evaluation_pending = False # Not pending any application
+            else:
+                # --- IMPORTANT CHANGE FOR LLM GIVE UP ---
+                # DO NOT set fulfilmentStatus to NOT_FULFILLED here.
+                # Allow the router to re-evaluate the current RAN state.
+                state.pm_evaluation_pending = False # Not pending application of a new refined strategy
+                # Current_strategy_type remains, but this 'give up' counts as an attempt.
+                # The router's max_attempts check will handle final termination.
+                # state.outcomes might still be populated from the *last* PM evaluation
+                # The router will pick it up and go to data_agent if targets not met.
+                # Clear outcomes if you want a fresh PM evaluation cycle.
+                state.outcomes = []
             return state # Return state, let router decide
 
-        # user_input = input(f"LLM proposed refined params {refined_parameters} for '{state.current_strategy_type}' (Total Attempt {state.total_refinement_attempts_for_intent}). Apply? ('yes' to confirm): ")
+        # user_input = input(f"LLM proposed refined params {parameters} for '{state.current_strategy_type}' (Total Attempt {state.total_refinement_attempts_for_intent}). Apply? ('yes' to confirm): ")
         user_input = "yes" # For testing, assume user always approves the refined parameters
         if user_input.lower() == "yes":
-            state.current_config_parameters = refined_parameters # Update with new params to be applied
+            state.current_config_parameters = parameters # Update with new params to be applied
             
             # Reconstruct state.strategies and state.patches with new parameters
             strategy_id = f"{state.applied_strategy_id}_iter{state.total_refinement_attempts_for_intent}" if state.applied_strategy_id else f"S_{state.current_strategy_type}_iter{state.total_refinement_attempts_for_intent}"
@@ -710,7 +845,7 @@ Output format:
                     "configurations": [{
                         "configId": config_id,
                         "configType": config_type_from_db,
-                        "parameters": refined_parameters,
+                        "parameters": parameters,
                         "affectedCells": object_target
                     }]
                 }]
@@ -718,7 +853,7 @@ Output format:
             state.patches = {} # Derive patches
             for cell in object_target:
                 if cell in CELL_CAPABILITIES:
-                    state.patches[cell] = {config_type_from_db: refined_parameters}
+                    state.patches[cell] = {config_type_from_db: parameters}
             
             state.applied_strategy_id = strategy_id # Update if changed
             state.fulfilmentStatus = "ACKNOWLEDGED" # Ready for orchestration of refined config
@@ -744,7 +879,6 @@ Output format:
     state.fulfilmentStatus = "NOT_FULFILLED"
     return state
 
-
 def data_agent_node(state: IntentState) -> IntentState:
     logger.info(f"{CYAN}Executing {inspect.currentframe().f_code.co_name}{RESET}")
     cell_id_to_query = None
@@ -759,7 +893,7 @@ def data_agent_node(state: IntentState) -> IntentState:
 
     logger.info(f"Fetching PM data for cell: {cell_id_to_query}")
     try:
-        raw_pm_data_str = get_measurement_data(cell_id_to_query, 1)
+        raw_pm_data_str = get_measurement_data(cell_id_to_query, 1, state.last_config_application_time )
         
         pm_metrics = json.loads(raw_pm_data_str)
         pm_metrics["queried_cell_id"] = cell_id_to_query
@@ -770,6 +904,52 @@ def data_agent_node(state: IntentState) -> IntentState:
         calculated_ee_value = calculate_energy_efficiency(state.pm_data)
         logger.info(f"Debug: pm_data: {state.pm_data}")
         state.calculated_ee_metrics = {"RANEnergyEfficiency": calculated_ee_value if calculated_ee_value is not None else "N/A_CALCULATION_FAILED"}
+
+        if len(last_two_configs)==7:
+            last_two_configs.append({
+                "strategy": state.strategies["appliedStrategies"],
+                "result_after_strategy": state.pm_data
+            })
+        else:
+            last_two_configs.append({
+                "strategy": "",
+                "result_after_strategy": ""
+            })
+            last_two_configs.append({
+                "strategy": "",
+                "result_after_strategy": ""
+            })
+            last_two_configs.append({
+                "strategy": "",
+                "result_after_strategy": ""
+            })
+            last_two_configs.append({
+                "strategy": "",
+                "result_after_strategy": ""
+            })
+            last_two_configs.append({
+                "strategy": "",
+                "result_after_strategy": ""
+            })
+            last_two_configs.append({
+                "strategy": "",
+                "result_after_strategy": ""
+            })
+            last_two_configs.append({
+                "strategy": {
+                    "result": {
+                        "chosen_strategy_type": "",
+                        "parameters": {
+                            "configuredMaxTxPower": 30
+                        },
+                        "give_up_on_this_strategy_type": "false"
+                    },
+                    "explanation": "Obtain existing running configuration from RAN. Current network state: configuredMaxTxPower is set to 30",
+                    "error": "null"
+                    },
+                "result_after_strategy": state.pm_data
+            })
+            
         logger.info(f"Debug: Calculated EE value: {calculated_ee_value}")
         logger.info(f"Debug: AvgPower: {state.pm_data.get('PEE.Energy', 'N/A')}")
         logger.info(f"Debug: TotPdcpPduVolumeUl: {state.pm_data.get('QosFlow.TotPdcpPduVolumeUl', 'N/A')}")
@@ -1239,12 +1419,13 @@ if __name__ == "__main__":
             "id": "INTENT_EE_Test_335",
             "intentExpectation": {
                 "expectationObject": {"objectInstance": "SubNetwork_1", "ObjectTarget": ["7"]},
-                "expectationTargets": [{"targetName": "RANEnergyEfficiency", "targetCondition": "IS_GREATER_THAN", "targetValue": "1200000", "bit": "bit/joule"}] # Example target value
+                "expectationTargets": [{"targetName": "RANEnergyEfficiency", "targetCondition": "IS_GREATER_THAN", "targetValue": "810000", "bit": "bit/joule"}] # Example target value
             },
-            "observationPeriod": 20
+            "observationPeriod": 30
         }
     }
     
+
     initial_state = IntentState(intent=intent_input) # Corrected structure
     # initial_state = IntentState(**initial_state_dict) # Use the dict directly if it matches IntentState fields
 
